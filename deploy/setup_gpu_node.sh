@@ -44,7 +44,7 @@ if [[ ! -f "$VENV/.ready" ]]; then
     "$VENV/bin/pip" install -q "$FA_WHL" || log "WARN: flash_attn wheel failed to install"
     "$VENV/bin/pip" install -q fastapi uvicorn pillow httpx "huggingface_hub[cli]"
     log "smoke test: importing flash_head.inference..."
-    PYTHONPATH="$FH" "$VENV/bin/python" -c "import torch, flash_head.inference as m; print('import ok, cuda =', torch.cuda.is_available())" \
+    (cd "$FH" && PYTHONPATH="$FH" "$VENV/bin/python" -c "import torch, flash_head.inference as m; print('import ok, cuda =', torch.cuda.is_available())") \
         || { log "ERROR: flash_head import failed (see message above); venv NOT marked ready"; exit 1; }
     touch "$VENV/.ready"
 fi
