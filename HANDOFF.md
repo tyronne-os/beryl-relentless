@@ -1,12 +1,59 @@
-# CRANE-IT V1 Session Handoff — Updated 2026-10-03
+# CRANE-IT V1 Session Handoff — Updated 2026-10-07
 
 **Next agent: read this top-to-bottom. Everything you need is here.**
 
 ---
 
+## SESSION UPDATE 2026-10-07 — L2 GPU deploy COMPLETE
+
+### What was accomplished
+The GPU render pipeline (L2) is now live on `berylize-node` (project `posh-eden`, zone `us-east1-c`).
+
+| Item | Status |
+|---|---|
+| FlashHead-1.3B Lite loaded on node | **DONE** — `model: flashhead-lite`, CUDA active, 18.8 GB VRAM free of 23.7 GB |
+| Weights on disk | **DONE** — 33 GB total: Model_Lite, VAE_LTX, VAE_Wan, wav2vec2-base-960h |
+| SSH tunnel open (port 9523) | **DONE** — `localhost:9523/health` returns live |
+| HF SDK split venv | **DONE** — weights in `/opt/beryl/venv-hf` (hub 2.x), model in `/opt/beryl/venv-fh` (hub <1.0) |
+| Systemd unit `beryl-render` | **DONE** — `WorkingDirectory=/opt/beryl/flashhead`, auto-restart on failure |
+| Bakeoff scorecard ran | **PARTIAL** — node side works; local machine missing `httpx` (fix: `pip3 install httpx pillow`) |
+| Preflight branch check | **DONE** — REPO section fails if you're on a stale branch missing deploy fixes |
+
+### Branch to use
+All deploy fixes are on **`claude/brave-pascal-xjvmwk`** — not `main`. `git checkout claude/brave-pascal-xjvmwk && git pull` before running anything. Preflight now catches this and tells you exactly what to run.
+
+### Next steps (priority order)
+1. **Run the local bakeoff**: `pip3 install httpx pillow` then `python3 bakeoff/scorecard_runner.py` with the tunnel open. Gets the first real L2 scorecard (latency, FPS, painted-pixel). Lip-sync and identity stay red until VERIFY is built — that is correct.
+2. **Fix TTS/MOTION port collision**: `src/server/avatar_chain.py` has `_TTS_URL` pointing to port 9522, same as MOTION. TTS (Kokoro) needs its own port (suggest 9519 or 9518; port map is in RUNBOOK section f).
+3. **Step 6 — photo-in endpoint**: Upload endpoint → render node. CPU/L1: LivePortrait warp. GPU/L2: FlashHead. Connects the Studio photo slot to the live render pipeline.
+4. **Step 7 — VERIFY real measurements**: SyncNet-style lip-sync offset (currently unmeasured, correctly red on scorecard). FPS and first-frame are already real.
+5. **Post-first-frame Podman path**: Snapshot working node as GCE machine image (no new tooling; captures speed win immediately). Then one Podman image per bakeoff slot (FlashHead / LeapTalk / AvatarForcing) to eliminate pip-resolver failures on fresh spot VMs.
+
+### What was fixed this session (strikes/lessons)
+See `docs/LESSONS-LEARNED.md` rows 13–16 for the full record. Short version:
+- **CWD bug (strike 1)**: `flash_head/inference.py` opens its config with a relative path at import time. Both the smoke test and the systemd `WorkingDirectory` must be set to `/opt/beryl/flashhead`. Fixed in commit `c408469` (smoke test) and `2072f25` (systemd unit).
+- **Wrong branch pull**: Fixes were on `claude/brave-pascal-xjvmwk`; user pulled `main`. Preflight now fails fast with exact `git checkout` instructions if deploy-branch commits are missing.
+- **HF SDK 2.x vs transformers 4.57.3**: `huggingface_hub>=2.1` is incompatible with FlashHead's required `transformers==4.57.3`. Solution: weights download uses a separate `/opt/beryl/venv-hf` with hub 2.x; model venv constrained to `huggingface_hub<1.0`.
+- **`--include` multi-pattern syntax**: In hub 2.x, `--include "A" "B"` treats `B` as a filename. Fixed to `--include "A" --include "B"` (repeated flag). Caught by reading the real CLI docs via HF MCP connector.
+- **Independent step markers**: Weights download now happens first with its own `.fh_ready` marker, independent of the model venv. A pip failure no longer blocks or re-runs the 8 GB download.
+
+### Key file locations
+| File | Purpose |
+|---|---|
+| `deploy/setup_gpu_node.sh` | Idempotent node setup (runs on the node via `gpu_on.sh`) |
+| `deploy/gpu_on.sh` | Start VM, copy files, run setup, start service, open tunnel, run bakeoff |
+| `deploy/gpu_off.sh` | Stop service, close tunnel, stop/delete VM |
+| `deploy/preflight.sh` | Read-only checks before gpu_on (run this first every time) |
+| `deploy/render_service.py` | FastAPI render service on the node (FlashHead inference) |
+| `bakeoff/scorecard_runner.py` | Scorecard runner (needs `httpx` + `pillow` locally) |
+| `docs/RUNBOOK.md` | Full operator runbook including skills documentation |
+| `docs/LESSONS-LEARNED.md` | Every distinct failure + root cause + fix |
+
+---
+
 ## BUILD TWO — backend rapid build (2026-10-07, planned, not started)
 
-Scope: backend only. The front end (Studio, Suite, landing) is final; do not touch it. Extend `src/server/{jev,deploy,chat,multiavatar,gpu}.py`, do not rewrite. Existing GPU: `berylize-node` (project posh-eden, us-east1-c, L4). Do NOT push to any repo until the user names the target.
+Scope: backend only. The front end (Studio, Suite, landing) is final; do not touch it. Extend `src/server/{jev,deploy,chat,multiavatar,gpu}.py`, do not rewrite. Existing GPU: `berylize-node` (project posh-eden, us-east1-c, L4).
 
 ### Rules
 - Every node gets a smoke test before anything else. Count errors per node; on the 3rd distinct failure STOP patching and vendor a known-good reference (Hugging Face / NVIDIA GitHub): Pipecat + nvidia voice-agent-examples, JoyVASA, FLOAT, LivePortrait (check InsightFace license), Kokoro, faster-whisper.
