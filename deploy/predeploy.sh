@@ -40,6 +40,9 @@ chk "L20 judge sets no sampling params or forced tool use (rejected by the judge
 chk "L20 lip-sync trust threshold in selftest.yaml equals lipsync.MIN_PEAK_R" "python3 -c 'from harness.selftest.spec import SPEC; from harness.nodes.verify import lipsync; assert SPEC[\"stages\"][\"face\"][\"gates\"][\"lipsync_peak_r_min\"] == lipsync.MIN_PEAK_R'" "keep one value in both places"
 chk "L19 JEV standards S1-S13 (offline)" "python3 tests/test_jev_standards.py" "run: python3 tests/test_jev_standards.py and fix what it names"
 chk "L17 fixture script makes silence_5s.wav" "grep -q 'silence_5s.wav' bakeoff/make_fixtures.sh" "no_css_only_motion uses it"
+chk "L21 sensory standards (offline)" "python3 tests/test_sensory.py" "run: python3 tests/test_sensory.py and fix what it names"
+chk "L21 JEV can only lower sensory triage, never raise" "python3 -c 'from harness.sensory.triage import Triage,InstrumentLight; t=Triage(); t.eye=InstrumentLight(\"eye\",\"red\"); t.jev_lower(\"eye\",\"gold\"); assert t.eye.light==\"red\"'" "harness/sensory/triage.py jev_lower must be monotone downward"
+chk "L21 enter_keys wizard parses (bash -n)" "bash -n deploy/enter_keys.sh" "fix shell syntax error in deploy/enter_keys.sh"
 
 echo "== LOCAL PYTHON (the interpreter gpu_on.sh will use) =="
 PY=python3; [[ -x .venv/bin/python ]] && PY=.venv/bin/python

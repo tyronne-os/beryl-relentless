@@ -19,6 +19,21 @@ Design: `docs/JEV-DESIGN.md`. Spec: `harness/jev/jev.yaml` (vocab, thresholds, l
 ## SELF-TEST (Claude judges Beryl in 3 stages)
 Design: `docs/SELF-TEST-DESIGN.md`. Code: `harness/selftest/`. Spec: `harness/selftest/selftest.yaml`. Tests: `python3 tests/test_selftest.py`. Increment 0 is built and tested offline; NOTHING has run live (no Claude API call, no cluster). Next: increment 1 (stage 1 live + voice calibration) once `ANTHROPIC_API_KEY` is in `.env`/Secret Manager and the node is up. Claude cannot hear audio or see motion; human review (increment 4) is the real check. Lip-sync now uses a +-0.8 s window and trusts only r >= 0.45 (a +-0.4 s window gave confident wrong numbers for offsets beyond it).
 
+## SENSORY INSTRUMENTS (per-frame realism triage)
+Code: `harness/sensory/`. Tests: `python3 tests/test_sensory.py` (13 offline tests, all pass). Four instruments:
+- **eye** (`eye.py`) — blink rate from pixel-brightness time series; target 17/min (Doughty 2002); triage gold/green/amber/orange/red.
+- **ear** (`ear.py`) — WPM, lead silence, clipping fraction, energy range from PCM; gates match selftest.yaml.
+- **mouth** (`mouth.py`) — two-instrument lip-sync: (1) motion-energy cross-correlation (primary, lipsync.py); (2) inner-mouth aperture proxy (secondary, activates when primary refuses e.g. FlashHead output). Both-agree = gold; one-agree = amber; none = orange.
+- **identity** (`identity.py`) — perceptual hash drift vs reference frame; proxy for cosine distance until InsightFace license cleared.
+- **triage** (`triage.py`) — aggregates all four; session light = worst instrument; `measure_clip(path)` runs all four on one mp4. **JEV can only LOWER a light, never raise it** (brand protection, tested in T05/T06).
+- **standards** (`standards.py`) — all thresholds with source category (`published|project|engineering`) and citation.
+
+Key design note: the second lip-sync instrument goes AMBER (not error) when FlashHead output can't be correlated — instruments disagree → amber, not red, until MediaPipe landmarks are integrated. User still needs to decide the asymmetric lip-sync rule (ITU-R ±133 ms vs Berylize 40–133 ms one-sided).
+
+## KEY WIZARD
+`bash deploy/enter_keys.sh` — prompts for each key one at a time (paste + Enter). Writes to `.env`, then optionally pushes to GCP Secret Manager. No source, no env file needed first. Excluded from S12 (setup wizard, not repair logic).
+Blink rate tuning: blink count on 27s clip = 5-6 = 11-13/min (under target 17/min). Raise `blink_rate` in JEV·DIRECTOR response to push it toward target.
+
 ## LOCAL CODING AGENT (free, no Claude tokens)
 Berylize 14B runs on the GPU node itself — use it for routine edits/searches to save Claude tokens for hard reasoning.
 ```bash

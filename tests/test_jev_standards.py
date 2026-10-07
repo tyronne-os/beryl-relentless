@@ -443,7 +443,7 @@ async def s12_jev_is_outside_repair_paths():
     pat = re.compile(r"harness\.jev|from harness import jev|api\.typesafe|TYPESAFE_API|JEV_API_KEY|CRANE_JEV")
     for base in ("deploy", "harness/controller"):
         for p in (ROOT / base).rglob("*"):
-            if p.is_file() and p.suffix in (".py", ".sh", ".yaml", ".yml") and p.name != "predeploy.sh":
+            if p.is_file() and p.suffix in (".py", ".sh", ".yaml", ".yml") and p.name not in ("predeploy.sh", "enter_keys.sh"):
                 for n, line in enumerate(p.read_text(errors="ignore").splitlines(), 1):
                     if pat.search(line) and not line.lstrip().startswith(("#", '"""', "JEV is excluded")):
                         out.append(f"{p.relative_to(ROOT)}:{n}: {line.strip()[:90]}")
