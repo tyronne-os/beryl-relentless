@@ -19,9 +19,9 @@ import httpx
 log = logging.getLogger("avatar_chain")
 
 # ── service URLs (all local; override via env) ─────────────────────────────
-_ASR_URL  = os.environ.get("ASR_URL",    "http://localhost:9520/transcribe")
-_TTS_URL  = os.environ.get("TTS_URL",    "http://localhost:9522/tts")       # kokoro
-_MOTION_URL = os.environ.get("MOTION_URL", "http://localhost:9522/generate")
+_ASR_URL    = os.environ.get("ASR_URL",    "http://localhost:9520/transcribe")
+_KOKORO_URL = os.environ.get("TTS_URL",    "http://localhost:8012")          # kokoro (port 8012)
+_MOTION_URL = os.environ.get("MOTION_URL", "http://localhost:9522/generate") # motion (port 9522)
 _LISTEN_URL = os.environ.get("LISTEN_URL", "http://localhost:9521/classify")
 _LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT_S", "30.0"))
 _CHAIN_TIMEOUT = float(os.environ.get("CHAIN_TIMEOUT_S", "45.0"))
@@ -94,7 +94,7 @@ async def call_llm(transcript: str, history: list[dict], ws_send_fn) -> str:
 
 async def tts_and_stream(ws, reply: str):
     """
-    Calls Kokoro TTS, streams audio chunks over ws before sending done.
+    Calls Kokoro TTS via OpenAI-compatible /v1/audio/speech, streams PCM over ws.
     {type: tts_start} → {type: tts_chunk, audio_b64, sample_rate} × N → {type: tts_done}
     Falls back to signalling client to call /api/services/kokoro/tts directly.
     Returns prosody dict for JEV·VOICE.
@@ -102,15 +102,18 @@ async def tts_and_stream(ws, reply: str):
     await ws.send_json({"type": "tts_start"})
     prosody = {"pitch_hz": 170, "energy_db": -18, "rate_wpm": 145}
     try:
-        resp = await _http.post(_TTS_URL, json={"text": reply, "voice": "af_heart"})
+        resp = await _http.post(
+            f"{_KOKORO_URL}/v1/audio/speech",
+            json={"model": "kokoro", "input": reply, "voice": "af_heart",
+                  "response_format": "pcm", "speed": 1.0},
+        )
         resp.raise_for_status()
-        data = resp.json()
-        chunks = data.get("chunks", [])
-        prosody = data.get("prosody", prosody)
-        for chunk in chunks:
+        audio_bytes = resp.content
+        CHUNK = 8192
+        for i in range(0, len(audio_bytes), CHUNK):
             await ws.send_json({
                 "type": "tts_chunk",
-                "audio_b64": chunk,
+                "audio_b64": base64.b64encode(audio_bytes[i:i + CHUNK]).decode(),
                 "sample_rate": 24000,
             })
     except Exception as exc:
