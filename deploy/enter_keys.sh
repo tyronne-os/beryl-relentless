@@ -1,86 +1,88 @@
 #!/usr/bin/env bash
-# enter_keys.sh — guided key wizard. Prompts one key at a time; writes to .env.
-# At the end, optionally pushes all keys to GCP Secret Manager.
-# Usage: bash deploy/enter_keys.sh
-# Paste each value and press Enter. Leave blank to skip a key.
+# enter_keys.sh — you paste the keys, everything else is automatic.
+# Asks only for keys not already in .env, derives the alias names, fills the
+# defaults, authenticates gcloud, and pushes to Secret Manager. Safe to re-run.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 ENV_FILE=".env"
-PUSHED=0
+touch "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
-_heading() { printf '\n\033[1;36m%s\033[0m\n' "=== $1 ==="; }
-_ask()     {
-    local KEY=$1 HINT=$2
-    printf '  \033[1m%-32s\033[0m  # %s\n' "$KEY" "$HINT"
-    printf '  Paste value (Enter to skip): '
-    read -r VAL
-    [[ -z "$VAL" ]] && return
-    # Remove key if already present, then append
-    grep -v "^${KEY}=" "$ENV_FILE" > "${ENV_FILE}.tmp" 2>/dev/null || true
-    printf '%s=%s\n' "$KEY" "$VAL" >> "${ENV_FILE}.tmp"
-    mv "${ENV_FILE}.tmp" "$ENV_FILE"
-    printf '  \033[32m✓ saved\033[0m\n'
+have() { grep -q "^$1=.\+" "$ENV_FILE"; }
+put()  {
+    grep -v "^$1=" "$ENV_FILE" > "$ENV_FILE.tmp" || true
+    printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE.tmp"
+    mv "$ENV_FILE.tmp" "$ENV_FILE"; chmod 600 "$ENV_FILE"
+}
+get()  { grep "^$1=" "$ENV_FILE" | tail -n1 | cut -d= -f2-; }
+
+# ask KEY "label" [alias ...]  — paste, hidden; blank keeps what is already there
+ask() {
+    local key=$1 label=$2; shift 2
+    if have "$key"; then
+        printf '  %-22s already set\n' "$key"
+    else
+        local v=""
+        while [[ -z "$v" ]]; do
+            printf '  %-22s (%s)\n  paste: ' "$key" "$label"
+            read -rs v; echo
+            v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"
+            [[ -z "$v" ]] && echo "  (empty, paste again)"
+        done
+        put "$key" "$v"
+    fi
+    local a
+    for a in "$@"; do put "$a" "$(get "$key")"; done
 }
 
-# Ensure .env exists and is gitignored
-touch "$ENV_FILE"
-if ! git check-ignore -q "$ENV_FILE" 2>/dev/null; then
-    printf '\033[33mWARN: .env is not gitignored — add it before committing\033[0m\n'
+echo "Paste each key when asked. Nothing else is needed."
+echo
+ask HF_TOKEN         "Hugging Face read token"        HUGGING_FACE_HUB_TOKEN
+ask NVIDIA_API_KEY   "NVIDIA / NGC key"               NGC_API_KEY NGC_ENTERPRISE_KEY
+ask ANTHROPIC_API_KEY "Anthropic key (Claude judge)"
+ask GITHUB_TOKEN     "GitHub token"                   GH_TOKEN
+ask TYPESAFE_API_KEY "TypeSafe / JEV key"             JEV_API_KEY
+ask KAGGLE_USERNAME  "Kaggle username"
+ask KAGGLE_KEY       "Kaggle key"
+
+# GCP service-account JSON: paste it on one line, or give the path to the .json file
+if ! have GCP_SA_KEY_JSON; then
+    while true; do
+        printf '  %-22s (service-account JSON: paste it, or give the file path)\n  paste: ' GCP_SA_KEY_JSON
+        read -rs raw; echo
+        if [[ -f "$raw" ]]; then raw=$(python3 -c 'import json,sys;print(json.dumps(json.load(open(sys.argv[1]))))' "$raw") || raw=""; fi
+        if python3 -c 'import json,sys;d=json.loads(sys.argv[1]);assert d.get("private_key")' "$raw" 2>/dev/null; then
+            put GCP_SA_KEY_JSON "$(python3 -c 'import json,sys;print(json.dumps(json.loads(sys.argv[1])))' "$raw")"
+            break
+        fi
+        echo "  (that is not a complete service-account JSON, try again)"
+    done
+else
+    printf '  %-22s already set\n' GCP_SA_KEY_JSON
 fi
 
-printf '\033[1mBeryl key wizard — paste each value and press Enter (blank = skip)\033[0m\n'
+have GCP_ZONE        || put GCP_ZONE us-east1-c
+have CRANE_JEV       || put CRANE_JEV true
+have CRANE_JEV_MODEL || put CRANE_JEV_MODEL jev-latest
+have CRANE_STAGE     || put CRANE_STAGE L1
 
-_heading "Hugging Face"
-_ask HF_TOKEN               "read token from hf.co/settings/tokens"
-_ask HUGGING_FACE_HUB_TOKEN "same token — some libs read this name"
+echo
+echo "Saved to .env (private, gitignored). Pushing to Secret Manager..."
 
-_heading "NVIDIA / NGC"
-_ask NVIDIA_API_KEY     "NGC API key (enterprise NIM)"
-_ask NGC_API_KEY        "NGC container pull key"
-_ask NGC_ENTERPRISE_KEY "enterprise NIM endpoints"
+SA=$(mktemp); chmod 600 "$SA"
+trap 'shred -u "$SA" 2>/dev/null || rm -f "$SA"' EXIT
+get GCP_SA_KEY_JSON > "$SA"
 
-_heading "Anthropic (Claude judge)"
-_ask ANTHROPIC_API_KEY "sk-ant-... from console.anthropic.com/settings/keys"
-
-_heading "GitHub"
-_ask GITHUB_TOKEN "ghp_... from github.com/settings/tokens"
-_ask GH_TOKEN     "same token — gh CLI reads this name"
-
-_heading "TypeSafe / JEV"
-_ask TYPESAFE_API_KEY "from app.typesafe.ai (also: JEV_API_KEY)"
-_ask JEV_API_KEY      "same key, alternate env name"
-
-_heading "Google Cloud"
-_ask GCP_SA_KEY_JSON '{\"type\":\"service_account\",...} — paste the full JSON on one line'
-_ask GCP_ZONE        "e.g. us-east1-c"
-
-_heading "Kaggle"
-_ask KAGGLE_USERNAME "your Kaggle username"
-_ask KAGGLE_KEY      "from kaggle.com/settings → API"
-
-_heading "Pipeline flags (defaults shown)"
-printf '  CRANE_JEV=true  CRANE_JEV_MODEL=jev-latest  CRANE_STAGE=L1\n'
-printf '  Press Enter to keep defaults, or paste overrides:\n'
-_ask CRANE_JEV       "true / false"
-_ask CRANE_JEV_MODEL "jev-latest"
-_ask CRANE_STAGE     "L0 / L1 / L2"
-
-printf '\n\033[1mKeys saved to %s\033[0m\n' "$ENV_FILE"
-
-# Offer Secret Manager push
-printf '\nPush to GCP Secret Manager now? (requires gcloud auth) [y/N] '
-read -r PUSH
-if [[ "${PUSH,,}" == "y" ]]; then
-    if [[ -f deploy/push_secrets.sh ]]; then
-        # shellcheck disable=SC1091
-        set -a; source "$ENV_FILE"; set +a
-        bash deploy/push_secrets.sh
-        PUSHED=1
-    else
-        printf '\033[33mdeploy/push_secrets.sh not found — skipping push\033[0m\n'
-    fi
+if ! command -v gcloud >/dev/null; then
+    echo "gcloud is not installed here. Keys are in .env; run this again on a machine with gcloud."
+    exit 0
 fi
-
-[[ $PUSHED -eq 0 ]] && printf '\nTo push to Secret Manager later: source .env && bash deploy/push_secrets.sh\n'
-printf '\nDone.\n'
+if gcloud auth activate-service-account --key-file="$SA" --quiet >/dev/null 2>&1; then
+    cp "$SA" /tmp/sa.json; chmod 600 /tmp/sa.json
+    export CLOUDSDK_AUTH_ACCESS_TOKEN=""
+    bash deploy/push_secrets.sh "$ENV_FILE" && echo && echo "DONE. You never need to paste these again."
+else
+    echo "Could not authenticate with that service-account key. Check GCP_SA_KEY_JSON, then re-run (the other keys are kept)."
+    exit 1
+fi
