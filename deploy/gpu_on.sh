@@ -15,6 +15,7 @@ source deploy/lib.sh
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-300}"   # service listens only after the model loads
 RUN_BAKEOFF=1; [[ "${1:-}" == "--no-bakeoff" ]] && RUN_BAKEOFF=0
 
+./deploy/predeploy.sh || { log "predeploy gate failed — nothing was changed"; exit 1; }
 ./deploy/preflight.sh || { log "preflight failed — fix the FAILs above, nothing was changed"; exit 1; }
 
 gc auth activate-service-account --key-file="$SA_KEY_PATH" --quiet >/dev/null 2>&1
@@ -74,7 +75,8 @@ curl -s -m 5 -X POST "${CONTROLLER_URL}/stage/upgrade" -H "Content-Type: applica
 
 if (( RUN_BAKEOFF )); then
     mkdir -p bakeoff/results
-    python3 bakeoff/scorecard_runner.py \
+    BPY=python3; [[ -x .venv/bin/python ]] && BPY=.venv/bin/python
+    "$BPY" bakeoff/scorecard_runner.py \
         --render-url "http://localhost:${RENDER_PORT}" \
         --verify-url "http://localhost:9525" \
         --output "bakeoff/results/$(date +%Y%m%d_%H%M%S).json" || true

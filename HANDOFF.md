@@ -19,6 +19,9 @@ The GPU render pipeline (L2) is now live on `berylize-node` (project `posh-eden`
 | Bakeoff scorecard ran | **PARTIAL** — node side works; local machine missing `httpx` (fix: `pip3 install httpx pillow`) |
 | Preflight branch check | **DONE** — REPO section fails if you're on a stale branch missing deploy fixes |
 
+### First L2 scorecard (measured, warm, 2 runs agree)
+FlashHead Lite on L4: **~35 fps** (passes >=24), **first chunk ~689 ms** (fails the 500 ms first-frame budget; steady, not warmup). Motion is real GPU rendering. Lip-sync and identity are unmeasured (red by design). Open decision: the 500 ms budget vs the chunk size / model choice; settle it in the FlashHead vs LeapTalk vs AvatarForcing bake-off, do not edit the threshold to pass.
+
 ### Branch to use
 All deploy fixes are on **`claude/brave-pascal-xjvmwk`** — not `main`. `git checkout claude/brave-pascal-xjvmwk && git pull` before running anything. Preflight now catches this and tells you exactly what to run.
 
