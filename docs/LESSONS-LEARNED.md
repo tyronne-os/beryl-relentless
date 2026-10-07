@@ -1,0 +1,30 @@
+# Lessons Learned
+
+Every failure hit so far, in order. Where the exact message was not captured in the chat history, the cell says "paraphrased".
+
+| # | Symptom | Root cause | Fix | Rule produced |
+|---|---|---|---|---|
+| 1 | `MASTERY: command not found` when sourcing `.env` | Path `.../BERYL MASTERY SUITE/...json` had spaces and was unquoted, so bash split it and ran `MASTERY...` as a command | Quote the value: `GCP_SA_KEY_JSON_PATH="/home/.../BERYL MASTERY SUITE/key.json"` | Quote every `.env` value containing spaces; `.env` holds only `KEY=value` lines |
+| 2 | `./deploy/gpu_on.sh: line 44: gcloud: command not found` | google-cloud-cli not installed on the laptop | Install google-cloud-cli (RUNBOOK section a) | preflight.sh checks `gcloud`, `curl`, `python3`, `ssh` before anything else |
+| 3 | Preflight/auth failures from placeholder values (paths like `/path/to/your/posh-eden-sa.json`, `HF_TOKEN=hf_xxxxxxxx...` copied from instructions) | Example values were used as real ones | Put real path and token in `.env` | preflight rejects missing key file, wrong project, and placeholder/rejected HF token (`hf_xxx*`, `*yourrealtoken*`, HTTP check against Hugging Face) |
+| 4 | gcloud ignored the service-account key: `gcloud auth list` showed "No credentialed accounts" / calls used the platform proxy token | The environment injects `CLOUDSDK_AUTH_ACCESS_TOKEN`, which overrides key auth | Run gcloud as `CLOUDSDK_AUTH_ACCESS_TOKEN="" GOOGLE_APPLICATION_CREDENTIALS=<key> gcloud ...` | All gcloud calls go through the `gc()` wrapper in `deploy/lib.sh`, never bare `gcloud` |
+| 5 | `WARNING: Some requests did not succeed. - Required 'compute.instances.list' permission for 'projects/posh-eden'. Listed 0 items.` | Service account had no Compute roles | Grant `roles/compute.admin` and `roles/iam.serviceAccountUser` in IAM | Preflight reports `check SA roles: compute.admin + iam.serviceAccountUser` when the VM cannot be described |
+| 6 | gpu_on.sh aborted on a `mv` of a file onto itself ("are the same file"; paraphrased, exact line not captured) | `set -e` plus `mv` where source and destination resolved to the same path | Replaced by `gc compute scp` to `/tmp/` then `sudo cp` into `/opt/beryl/render/` | Under `set -e`, never `mv` between possibly identical paths; copy to a staging path first |
+| 7 | Health probe returned status `000` although the service was running | Two causes: (1) the firewall allows only port 22, so a probe from outside the node to a non-22 port got nothing; (2) `--skip-deploy` left the systemd unit on the old port, so the service listened elsewhere | (1) probe on the node over SSH, then reach it through an SSH tunnel; (2) remove the skip flag; setup always rewrites the unit with the current `RENDER_PORT` (idempotent) | No firewall changes. Health-check from inside the node. No skip flags on idempotent steps. Preflight warns when unit port differs from config |
+| 8 | Weights not found / render in passthrough; HF repo `SoulX-AI/FlashHead` does not exist | Repo ID was guessed, not looked up | Real ID is `Soul-AILab/SoulX-FlashHead-1_3B` (code repo `Soul-AILab/SoulX-FlashHead`); weights pulled with `Model_Lite/*` and `VAE_LTX/*` patterns | Verify repo IDs/APIs against the real source before coding |
+| 9 | `No module named 'flashhead'` and `No module named 'avatar_forcing'` | `render_service.py` imported invented module/class names (`FlashHeadPipeline`, `AvatarForcingPipeline`); service silently fell back to `passthrough`, which only echoes the photo | Rewrote against the real FlashHead repo layout; `/health` now reports why a model failed to load; `/render` marks `model="passthrough"` | Same rule as #8. A fallback must announce itself (gpu_on warns on `passthrough`) |
+| 10 | Scorecard showed green with no real measurement | Runner contained hard-coded fake values | Removed. Lip-sync and identity drift are not measured and stay red | Never hard-code metrics. Not measured means red or unknown |
+| 11 | Preflight `ls` bug (paraphrased; exact output not captured) | Fragile `ls`-based file check | Replaced with explicit `[[ -f ... ]]` tests | Test files with `[[ -f ]]` / `[[ -d ]]`, not by parsing `ls` |
+| 12 | `pip` `ResolutionImpossible` on `nvidia-nccl-cu12==2.27.3` vs torch 2.7.1+cu128 | FlashHead `requirements.txt` pins nccl 2.27.3, which conflicts with torch 2.7.1 cu128, which needs 2.26.x | Install the requirements without the nccl pin (let torch's dependency choose). Fixed in `deploy/setup_gpu_node.sh`: nccl/gradio/flask lines filtered out, torch pinned via a constraints file, `--no-deps` retry, and an import smoke test (`flash_head.inference`) before the venv is marked ready. Not yet confirmed on the node at time of writing | Upstream requirements files are not authoritative for our torch build; pin torch first, then filter conflicting pins |
+
+## Rules that apply to all work
+
+- Three-strikes rule: on the 3rd distinct failure of a node, stop patching and vendor a known-good reference (Pipecat, JoyVASA, FLOAT, LivePortrait, Kokoro, faster-whisper, or the HF/NVIDIA GitHub original).
+- Verify repo IDs and APIs against the real source before coding. Open the README, list the files, read the requirements.
+- JEV (TypeSafe) is never in a repair path; every JEV call has a deterministic local fallback.
+- Every node ships with a smoke test first.
+- Secrets never committed; run a secret scan before every push.
+
+## Credentials
+
+A GCP service-account key once appeared in chat history. Treat it as exposed: rotate it (create a new key in the console, delete the old one, update `GCP_SA_KEY_JSON_PATH`). Keys, tokens, and key IDs do not belong in chat, docs, or commits; `.gitignore` blocks `.env`, `*.key`, `*.pem`, `*_sa.json`, `*service_account*.json`, `*credentials*.json`, but a differently named JSON key would not be caught, so keep key files outside the repo.
