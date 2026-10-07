@@ -432,3 +432,6 @@ The Beryl Suite pipeline graph shows green, but **nothing proves the avatar actu
 
 ### NOT COMMITTED ON PURPOSE
 `src/server/data/` (runtime triage log) and `src/server/static/index.html` (build output).
+
+## Saved utility: USB restore
+`sudo bash scripts/usb_nuke.sh` — proven on hardware (user-confirmed). One command wipes and exFAT-formats up to 3 USB sticks (labels BERYL-01..03), USB-only, boot disk protected.

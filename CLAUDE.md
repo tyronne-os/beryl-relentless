@@ -133,3 +133,8 @@ beryl-relentless/
 - Real L4 spot price from GCP billing catalog
 - CPU INT8 motion FPS — measure, do not assume
 - LeapTalk 200 FPS claim — unverified on L4; 96 FPS is FlashHead 4090 number
+
+---
+
+## Saved utilities (user-approved, proven working)
+- **USB restore / wipe:** `sudo bash scripts/usb_nuke.sh` — prompt-free, USB-only (TRAN=usb), protects boot disk, wipes + exFAT-formats BERYL-01..03 in sequence. Args: `[count] [countdown_s]`. When the user asks to wipe/restore/reset USB sticks, point them to this script; do not rewrite it.
