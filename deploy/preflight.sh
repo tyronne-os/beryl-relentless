@@ -58,12 +58,12 @@ if (( FAILS == 0 )) && [[ "${STATUS_STOPPED:-0}" != 1 ]]; then
     REMOTE=$(node_ssh '
         echo "gpu=$(nvidia-smi --query-gpu=name,memory.free --format=csv,noheader 2>/dev/null | tr -d " " || echo none)"
         echo "disk_gb=$(df -BG --output=avail /opt 2>/dev/null | tail -1 | tr -dc 0-9)"
-        echo "venv=$([ -x /opt/beryl/venv/bin/python ] && echo yes || echo no)"
+        echo "venv=$([ -f /opt/beryl/venv-fh/.ready ] && echo yes || echo no)"
         echo "unit_port=$(grep -o "RENDER_PORT=[0-9]*" /etc/systemd/system/beryl-render.service 2>/dev/null | cut -d= -f2)"
         echo "svc=$(systemctl is-active beryl-render 2>/dev/null)"
         echo "port_owner=$(sudo ss -ltnp 2>/dev/null | grep ":'"$RENDER_PORT"' " | grep -o "users:((\"[a-z0-9._-]*\"" | head -1)"
-        echo "weights=$(du -sm /opt/beryl/weights/* 2>/dev/null | tr "\t" ":" | tr "\n" " ")"
-        echo "flashhead_mod=$(/opt/beryl/venv/bin/python -c "import flashhead" 2>&1 | tail -1 | cut -c1-60)"
+        echo "weights=$([ -f /opt/beryl/weights/.fh_ready ] && du -sm /opt/beryl/weights/*/ 2>/dev/null | tr "\t" ":" | tr "\n" " ")"
+        echo "flashhead_mod=$([ -d /opt/beryl/flashhead/flash_head ] && echo ok)"
     ' 2>/dev/null) || REMOTE=""
     if [[ -z "$REMOTE" ]]; then
         fail "SSH to $INSTANCE failed" "run: gcloud compute ssh $INSTANCE --zone=$ZONE and read the error"
@@ -71,7 +71,7 @@ if (( FAILS == 0 )) && [[ "${STATUS_STOPPED:-0}" != 1 ]]; then
         get() { echo "$REMOTE" | sed -n "s/^$1=//p"; }
         G=$(get gpu);       [[ "$G" == *L4* || "$G" == *T4* ]] && pass "GPU visible: $G" || fail "no GPU visible to nvidia-smi" "driver missing; setup_gpu_node.sh will try, may need reboot"
         D=$(get disk_gb);   [[ "${D:-0}" -ge 30 ]] && pass "disk free: ${D} GB" || fail "only ${D:-?} GB free on /opt" "weights need ~30 GB; delete old model files"
-        [[ "$(get venv)" == yes ]] && pass "python venv present" || warn "no venv yet (first run installs torch, ~5 min)"
+        [[ "$(get venv)" == yes ]] && pass "python venv present" || warn "FlashHead venv not built yet (first run ~10 min)"
         UP=$(get unit_port)
         if [[ -z "$UP" ]]; then warn "systemd unit not installed yet (gpu_on.sh will write it)"
         elif [[ "$UP" != "$RENDER_PORT" ]]; then warn "unit uses port $UP but config says $RENDER_PORT (gpu_on.sh rewrites it)"
@@ -80,7 +80,7 @@ if (( FAILS == 0 )) && [[ "${STATUS_STOPPED:-0}" != 1 ]]; then
         if [[ -n "$PO" && "$SV" != active ]]; then fail "port $RENDER_PORT already used by another process: $PO" "pick another RENDER_PORT"
         else pass "port $RENDER_PORT free or ours (service: ${SV:-none})"; fi
         W=$(get weights); [[ -n "$W" ]] && pass "weights on disk: $W" || warn "no model weights on node yet -> render runs in PASSTHROUGH mode"
-        FM=$(get flashhead_mod); [[ "$FM" == *"No module"* || -z "$FM" ]] && warn "flashhead python module not installed -> passthrough" || pass "flashhead module importable"
+        FM=$(get flashhead_mod); [[ "$FM" == ok ]] && pass "FlashHead code present" || warn "FlashHead code not installed yet (gpu_on.sh installs it)"
     fi
 fi
 

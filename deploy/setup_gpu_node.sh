@@ -1,92 +1,79 @@
 #!/usr/bin/env bash
-# setup_gpu_node.sh — runs ON the GPU node after first deploy
-# Installs NVIDIA drivers, cuda, torch, weights, systemd service.
-# Called by gpu_on.sh via gcloud compute ssh.
-
+# setup_gpu_node.sh — runs ON the GPU node (via sudo -E from gpu_on.sh). Idempotent.
+# Installs the real FlashHead-1.3B (Lite) stack: Soul-AILab/SoulX-FlashHead (Apache-2.0).
 set -euo pipefail
-
 log() { echo "[setup] $*"; }
 
-WEIGHTS_DIR="/opt/beryl/weights"
-SERVICE_DIR="/opt/beryl/render"
-VENV="/opt/beryl/venv"
-HF_TOKEN="${HF_TOKEN:-}"
+BASE=/opt/beryl
+WEIGHTS=$BASE/weights
+FH=$BASE/flashhead
+VENV=$BASE/venv-fh
+PORT="${RENDER_PORT:-9523}"
+FA_WHL="https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.0.post2/flash_attn-2.8.0.post2+cu12torch2.7cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
 
-# ── NVIDIA driver ─────────────────────────────────────────────────────────
-if ! nvidia-smi &>/dev/null; then
-    log "Installing NVIDIA driver + CUDA..."
-    apt-get update -qq
-    apt-get install -y -qq linux-headers-$(uname -r) build-essential
-    # GCP Deep Learning VMs ship drivers; on plain ubuntu use DKMS path
-    apt-get install -y -qq nvidia-driver-535 nvidia-cuda-toolkit || \
-        log "WARN: driver install failed — may already be present or need reboot"
-fi
-log "NVIDIA: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'driver not ready yet')"
+nvidia-smi >/dev/null 2>&1 || { log "ERROR: no NVIDIA driver on node"; exit 1; }
+log "GPU: $(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader)"
+python3 --version | grep -q "3.10" || log "WARN: system python is not 3.10 ($(python3 --version)); FlashHead targets 3.10"
 
-# ── Python venv + torch ────────────────────────────────────────────────────
-if [[ ! -f "$VENV/bin/python" ]]; then
-    log "Creating venv + installing torch..."
-    apt-get install -y -qq python3.11 python3.11-venv python3-pip
-    python3.11 -m venv "$VENV"
-    "$VENV/bin/pip" install --quiet --upgrade pip
-    "$VENV/bin/pip" install --quiet \
-        torch torchvision --index-url https://download.pytorch.org/whl/cu118
-    "$VENV/bin/pip" install --quiet \
-        fastapi uvicorn httpx huggingface_hub diffusers accelerate
+mkdir -p "$WEIGHTS" "$BASE/render"
+
+if ! command -v ffmpeg >/dev/null || ! command -v git >/dev/null; then
+    log "installing ffmpeg/git..."
+    apt-get update -qq && apt-get install -y -qq ffmpeg git python3-venv python3-dev
 fi
 
-# ── Weights download ───────────────────────────────────────────────────────
-mkdir -p "$WEIGHTS_DIR"
+if [[ ! -d "$FH/.git" ]]; then
+    log "cloning SoulX-FlashHead..."
+    git clone --depth 1 https://github.com/Soul-AILab/SoulX-FlashHead "$FH"
+fi
 
-# FlashHead-1.3B (primary bake-off candidate)
-if [[ ! -d "$WEIGHTS_DIR/flashhead" && -n "$HF_TOKEN" ]]; then
-    log "Downloading FlashHead-1.3B weights..."
-    "$VENV/bin/python" -c "
+if [[ ! -f "$VENV/.ready" ]]; then
+    log "building venv (torch 2.7.1 cu128 + FlashHead requirements) — first run ~10 min..."
+    rm -rf "$VENV"; python3 -m venv "$VENV"
+    "$VENV/bin/pip" install -q --upgrade pip wheel
+    "$VENV/bin/pip" install -q torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128
+    "$VENV/bin/pip" install -q -r "$FH/requirements.txt"
+    "$VENV/bin/pip" install -q "$FA_WHL" || log "WARN: flash_attn wheel failed to install"
+    "$VENV/bin/pip" install -q fastapi uvicorn pillow httpx "huggingface_hub[cli]"
+    touch "$VENV/.ready"
+fi
+
+if [[ ! -f "$WEIGHTS/.fh_ready" ]]; then
+    [[ -n "${HF_TOKEN:-}" ]] || { log "ERROR: HF_TOKEN not set on node"; exit 1; }
+    log "downloading FlashHead Lite + LTX VAE (~8 GB) and wav2vec2..."
+    HF_TOKEN="$HF_TOKEN" WEIGHTS="$WEIGHTS" "$VENV/bin/python" - <<'PY'
+import os
 from huggingface_hub import snapshot_download
-snapshot_download(
-    repo_id='SoulX-AI/FlashHead',
-    local_dir='$WEIGHTS_DIR/flashhead',
-    token='$HF_TOKEN',
-    ignore_patterns=['*.safetensors.index.json'],
-)
-print('FlashHead downloaded')
-" 2>&1 | tail -5 || log "WARN: FlashHead download failed — check HF_TOKEN and repo access"
+t, w = os.environ["HF_TOKEN"], os.environ["WEIGHTS"]
+snapshot_download("Soul-AILab/SoulX-FlashHead-1_3B", local_dir=f"{w}/SoulX-FlashHead-1_3B",
+                  allow_patterns=["Model_Lite/*", "VAE_LTX/*", "*.json"], token=t)
+snapshot_download("facebook/wav2vec2-base-960h", local_dir=f"{w}/wav2vec2-base-960h",
+                  ignore_patterns=["*.h5", "*.msgpack", "*.ot"], token=t)
+print("weights ok")
+PY
+    touch "$WEIGHTS/.fh_ready"
 fi
 
-# AvatarForcing (fallback bake-off candidate)
-if [[ ! -d "$WEIGHTS_DIR/avatarforcing" && -n "$HF_TOKEN" ]]; then
-    log "Downloading AvatarForcing weights..."
-    "$VENV/bin/python" -c "
-from huggingface_hub import snapshot_download
-snapshot_download(
-    repo_id='lycui/AvatarForcing',
-    local_dir='$WEIGHTS_DIR/avatarforcing',
-    token='$HF_TOKEN',
-)
-print('AvatarForcing downloaded')
-" 2>&1 | tail -5 || log "WARN: AvatarForcing download failed"
-fi
-
-# ── systemd service ────────────────────────────────────────────────────────
-log "Writing systemd unit beryl-render.service..."
-cat > /etc/systemd/system/beryl-render.service <<'UNIT'
+log "writing systemd unit (port $PORT)..."
+cat > /etc/systemd/system/beryl-render.service <<UNIT
 [Unit]
-Description=Beryl GPU Render Service
-After=network.target nvidia-persistenced.service
+Description=Beryl GPU Render Service (FlashHead Lite)
+After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/beryl/render
-Environment="WEIGHTS_DIR=/opt/beryl/weights"
-Environment="RENDER_PORT=9523"
-ExecStart=/opt/beryl/venv/bin/python render_service.py
+WorkingDirectory=$BASE/render
+Environment="PYTHONPATH=$FH"
+Environment="FLASHHEAD_CKPT=$WEIGHTS/SoulX-FlashHead-1_3B"
+Environment="WAV2VEC_DIR=$WEIGHTS/wav2vec2-base-960h"
+Environment="RENDER_PORT=$PORT"
+ExecStart=$VENV/bin/python render_service.py
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 UNIT
-
 systemctl daemon-reload
-log "Setup complete — ready for systemctl start beryl-render"
+log "setup complete"

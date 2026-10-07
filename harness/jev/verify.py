@@ -120,30 +120,30 @@ def scorecard(verify_result: dict, metrics: dict) -> dict:
     Build the full sensory gland scorecard from verify + raw metrics.
     metrics: {lipsync_offset_ms, fps, first_frame_latency_ms, identity_drift}
     """
-    lipsync = metrics.get("lipsync_offset_ms", 0)
+    lipsync = metrics.get("lipsync_offset_ms")
     fps = metrics.get("fps", 0)
     first_frame = metrics.get("first_frame_latency_ms", 0)
-    drift = metrics.get("identity_drift", 0.0)
+    drift = metrics.get("identity_drift")
 
     return {
         "stage": verify_result.get("telemetry_stage", "L0"),
         "stage_consistent": verify_result.get("consistent", False),
         "motion_real": verify_result.get("is_motion_visible", False),
-        "lipsync_ok": 40 <= lipsync <= 133,
+        "lipsync_ok": lipsync is not None and 40 <= lipsync <= 133,
         "lipsync_offset_ms": lipsync,
         "fps_ok": fps >= 24,
         "fps": fps,
         "first_frame_ok": first_frame <= 500,
         "first_frame_ms": first_frame,
-        "identity_ok": drift <= 0.15,
-        "identity_drift": round(drift, 3),
+        "identity_ok": drift is not None and drift <= 0.15,
+        "identity_drift": None if drift is None else round(drift, 3),
         "audio_agrees": verify_result.get("agrees", True),
         "all_green": all([
             verify_result.get("consistent", False),
             verify_result.get("is_motion_visible", False),
-            40 <= lipsync <= 133,
+            lipsync is not None and 40 <= lipsync <= 133,
             fps >= 24,
             first_frame <= 500,
-            drift <= 0.15,
+            drift is not None and drift <= 0.15,
         ]),
     }

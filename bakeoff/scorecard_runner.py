@@ -91,6 +91,11 @@ def load_fixture(name: str) -> bytes:
 
 
 def load_reference_photo() -> str:
+    for name in ("reference.jpg", "reference.png"):
+        path = FIXTURES_DIR / name
+        if path.exists():
+            return base64.b64encode(path.read_bytes()).decode()
+    raise SystemExit("bakeoff/fixtures/reference.jpg missing: add a front-facing face photo first")
     path = FIXTURES_DIR / "reference.jpg"
     if path.exists():
         return base64.b64encode(path.read_bytes()).decode()
@@ -131,16 +136,14 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
             "duplug_state": "speaking",
             "audio_energy_rms": 0.1,
             "fps_actual": fps,
-            "lipsync_offset_ms": 80,
             "first_frame_latency_ms": first_frame_ms,
         }
         metrics = {
-            "lipsync_offset_ms": 80,
             "fps": fps,
-            "first_frame_latency_ms": first_frame_ms,
-            "identity_drift": 0.05,
-            "painted_pixel_area": 500 if render_result.get("model") != "passthrough" else 0,
-        }
+            "first_frame_latency_ms": render_result.get("latency_ms", first_frame_ms),
+            "painted_pixel_area": render_result.get("painted", {}).get("changed_pixel_area", 0),
+            "frame_diff_mean": render_result.get("painted", {}).get("frame_diff_mean", 0.0),
+        }  # lipsync + identity drift are NOT measured yet -> scorecard keeps them red
         verify_resp = await client.post(f"{verify_url}/scorecard", json={
             "telemetry": telemetry,
             "metrics": metrics,
