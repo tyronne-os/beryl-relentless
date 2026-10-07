@@ -43,8 +43,11 @@ ask NVIDIA_API_KEY   "NVIDIA / NGC key"               NGC_API_KEY NGC_ENTERPRISE
 ask ANTHROPIC_API_KEY "Anthropic key (Claude judge)"
 ask GITHUB_TOKEN     "GitHub token"                   GH_TOKEN
 ask TYPESAFE_API_KEY "TypeSafe / JEV key"             JEV_API_KEY
-ask KAGGLE_USERNAME  "Kaggle username"
 ask KAGGLE_KEY       "Kaggle key"
+
+# KAGGLE_USERNAME is no longer asked for. Drop any stale value (a key was pasted there once).
+grep -v '^KAGGLE_USERNAME=' "$ENV_FILE" > "$ENV_FILE.tmp" || true
+mv "$ENV_FILE.tmp" "$ENV_FILE"; chmod 600 "$ENV_FILE"
 
 # GCP service-account JSON: paste it on one line, or give the path to the .json file
 if ! have GCP_SA_KEY_JSON; then
@@ -81,6 +84,7 @@ fi
 if gcloud auth activate-service-account --key-file="$SA" --quiet >/dev/null 2>&1; then
     cp "$SA" /tmp/sa.json; chmod 600 /tmp/sa.json
     export CLOUDSDK_AUTH_ACCESS_TOKEN=""
+    gcloud secrets delete beryl-kaggle-username --project="${GCP_PROJECT:-posh-eden}" --quiet >/dev/null 2>&1 || true
     bash deploy/push_secrets.sh "$ENV_FILE" && echo && echo "DONE. You never need to paste these again."
 else
     echo "Could not authenticate with that service-account key. Check GCP_SA_KEY_JSON, then re-run (the other keys are kept)."
