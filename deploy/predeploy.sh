@@ -31,6 +31,9 @@ chk "L4 gcloud only via gc() wrapper" "! grep -En '^\\s*(\\$\\(|sudo )?gcloud ' 
 chk "L14 preflight checks the repo/branch" "grep -q '== REPO ==' deploy/preflight.sh" "restore the REPO check"
 chk "L9 render service announces passthrough fallback" "grep -q 'passthrough' deploy/render_service.py && grep -q 'load_error' deploy/render_service.py" "fallbacks must announce themselves"
 chk "L10 scorecard has no hard-coded metrics" "! grep -E '\"lipsync_offset_ms\": *[0-9]|identity_drift\": *0\.[0-9]' bakeoff/scorecard_runner.py" "unmeasured must stay None"
+chk "L17 scorecard warms up before timed tests" "grep -q 'cold_start_ms' bakeoff/scorecard_runner.py" "first /render after restart is a ~60 s cold start; it must not be test #1"
+chk "L17 scorecard errors use repr (timeouts have empty str)" "grep -q 'repr(exc)' bakeoff/scorecard_runner.py" "use repr(exc) so ReadTimeout is visible"
+chk "L17 fixture script makes silence_5s.wav" "grep -q 'silence_5s.wav' bakeoff/make_fixtures.sh" "no_css_only_motion uses it"
 
 echo "== LOCAL PYTHON (the interpreter gpu_on.sh will use) =="
 PY=python3; [[ -x .venv/bin/python ]] && PY=.venv/bin/python

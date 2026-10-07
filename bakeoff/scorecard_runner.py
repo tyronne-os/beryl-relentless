@@ -96,12 +96,6 @@ def load_reference_photo() -> str:
         if path.exists():
             return base64.b64encode(path.read_bytes()).decode()
     raise SystemExit("bakeoff/fixtures/reference.jpg missing: add a front-facing face photo first")
-    path = FIXTURES_DIR / "reference.jpg"
-    if path.exists():
-        return base64.b64encode(path.read_bytes()).decode()
-    # 1x1 black JPEG stub
-    STUB = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k="
-    return STUB
 
 
 # ── Run a single test ─────────────────────────────────────────────────────
@@ -181,7 +175,7 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
             }
 
     except Exception as exc:
-        scorecard = {"error": str(exc)}
+        scorecard = {"error": repr(exc)}  # repr: httpx timeouts have an empty str()
 
     passed = test["check"](scorecard) if scorecard and "error" not in scorecard else False
 
@@ -223,6 +217,24 @@ async def main(render_url: str, verify_url: str, output: str):
         except Exception as exc:
             print(f"  WARN: could not reach render node: {exc}\n")
 
+        # Warm-up: the first /render after a service restart pays one-off CUDA/compile
+        # cost (~20-60 s). Measure it and report it as cold_start_ms, separately from
+        # the per-test first-frame numbers, so test #1 is not a timeout.
+        print("  [warmup] one untimed render (cold start)...")
+        t_w = time.monotonic()
+        cold_start = {"cold_start_ms": None, "error": None}
+        try:
+            r = await client.post(f"{render_url}/render", json={
+                "photo_b64": load_reference_photo(),
+                "audio_b64": base64.b64encode(load_fixture("hello_beryl.wav")).decode(),
+            }, timeout=300.0)
+            r.raise_for_status()
+            cold_start["cold_start_ms"] = round((time.monotonic() - t_w) * 1000, 1)
+            print(f"    → {cold_start['cold_start_ms']} ms\n")
+        except Exception as exc:
+            cold_start["error"] = repr(exc)
+            print(f"    → warmup failed: {exc!r}\n")
+
         results = []
         critical_failures = 0
 
@@ -241,6 +253,7 @@ async def main(render_url: str, verify_url: str, output: str):
         "render_url": render_url,
         "all_green": all_green,
         "critical_failures": critical_failures,
+        "warmup": cold_start,
         "tests": results,
     }
 

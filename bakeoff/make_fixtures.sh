@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bakeoff/make_fixtures.sh — generate speech fixture WAVs using espeak-ng.
 # Run on the GPU node (or any Ubuntu machine) where espeak-ng is available.
-# Output: bakeoff/fixtures/hello_beryl.wav and long_session_30s.wav (16 kHz mono)
+# Output: bakeoff/fixtures/hello_beryl.wav, long_session_30s.wav, silence_5s.wav (16 kHz mono)
 #
 # Usage (from repo root):
 #   bash bakeoff/make_fixtures.sh
@@ -38,6 +38,10 @@ sox "$TMP2" -r 16000 -c 1 -b 16 "$FIXTURES/long_session_30s.wav"
 rm -f "$TMP2"
 SECS2=$(sox --info -D "$FIXTURES/long_session_30s.wav" 2>/dev/null || echo "?")
 ok "long_session_30s.wav — ${SECS2}s at 16 kHz mono"
+
+# ── silence_5s.wav — idle face: proves pixels move with no speech ───────
+sox -n -r 16000 -c 1 -b 16 "$FIXTURES/silence_5s.wav" trim 0.0 5.0
+ok "silence_5s.wav — 5s at 16 kHz mono"
 
 echo
 echo "Fixtures written to $FIXTURES/"
