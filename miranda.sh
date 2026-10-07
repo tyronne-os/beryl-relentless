@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # miranda.sh — one-click launch: preflight → start GPU node → open Miranda UI
 #
-# Usage (from repo root, with .env loaded):
-#   source .env && bash miranda.sh
+# Usage (from repo root — no source .env needed):
+#   bash miranda.sh
+#
+# Secrets are loaded automatically from GCP Secret Manager (falls back to .env).
+# One-time setup: source .env && bash deploy/push_secrets.sh
 #
 # Stop everything:
 #   bash miranda.sh --stop
 set -uo pipefail
 cd "$(dirname "$0")"
+
+# ── Load secrets from GCP Secret Manager (or .env fallback) ──────────────────
+source deploy/load_secrets.sh
 
 # ── --stop ────────────────────────────────────────────────────────────────────
 if [[ "${1:-}" == "--stop" ]]; then
