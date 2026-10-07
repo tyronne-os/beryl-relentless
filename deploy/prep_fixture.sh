@@ -22,7 +22,9 @@ fi
 if [[ "$ARG" =~ ^[0-9]+$ ]]; then SRC="${IMGS[$((ARG-1))]:-}"; else SRC="$ARG"; fi
 [[ -f "$SRC" ]] || { echo "not found: $SRC"; exit 1; }
 
-python3 - "$SRC" "$DEST" <<'PY' 2>/dev/null || cp "$SRC" "$DEST"
+PY=python3; [[ -x "$(dirname "$0")/../.venv/bin/python" ]] && PY="$(dirname "$0")/../.venv/bin/python"
+"$PY" -c "import PIL" 2>/dev/null || { echo "Pillow missing for $PY: python3 -m venv .venv && .venv/bin/pip install pillow"; exit 1; }
+"$PY" - "$SRC" "$DEST" <<'PY' 
 import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert("RGB")

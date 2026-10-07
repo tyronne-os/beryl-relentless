@@ -78,7 +78,7 @@ def load_fixture(name: str) -> bytes:
     path = FIXTURES_DIR / name
     if path.exists():
         return path.read_bytes()
-    # Stub: generate silence if fixture file missing
+    print(f"    WARN: fixture {name} missing -> using 5 s of SILENCE (not real speech; lip/motion results are weak)")
     import struct, wave, io
     frames = 16000 * 5  # 5s silence at 16kHz
     buf = io.BytesIO()
@@ -166,7 +166,9 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
             scorecard = {
                 "stage": "L2",
                 "stage_consistent": is_real_render,
-                "motion_real": is_real_render or painted_area > 100,
+                # real model AND pixels actually changed between frames (silent idle may be small)
+                "motion_real": is_real_render and painted.get("frame_diff_mean", 0.0) > 0,
+                "painted": painted,
                 "lipsync_ok": False,   # not measured yet
                 "lipsync_offset_ms": None,
                 "fps_ok": fps >= 24,

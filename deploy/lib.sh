@@ -29,6 +29,10 @@ tunnel_up() {
 
 tunnel_start() {
     tunnel_up && return 0
+    pkill -f "ssh.*-L ${RENDER_PORT}:localhost:${RENDER_PORT}" 2>/dev/null && sleep 1
+    if (echo >"/dev/tcp/127.0.0.1/${RENDER_PORT}") 2>/dev/null; then
+        echo "[${SCRIPT_TAG:-beryl}] ERROR: local port ${RENDER_PORT} already in use by something else" >&2; return 1
+    fi
     gc compute ssh "$INSTANCE" --zone="$ZONE" --project="$PROJECT" --quiet -- \
         -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
         -L "${RENDER_PORT}:localhost:${RENDER_PORT}" >/tmp/beryl_tunnel.log 2>&1 &
@@ -43,5 +47,6 @@ tunnel_start() {
 
 tunnel_stop() {
     tunnel_up && kill "$(cat "$TUNNEL_PID_FILE")" 2>/dev/null
+    pkill -f "ssh.*-L ${RENDER_PORT}:localhost:${RENDER_PORT}" 2>/dev/null || true
     rm -f "$TUNNEL_PID_FILE"
 }

@@ -20,9 +20,11 @@ python3 --version | grep -q "3.10" || log "WARN: system python is not 3.10 ($(py
 
 mkdir -p "$WEIGHTS" "$BASE/render"
 
-if ! command -v ffmpeg >/dev/null || ! command -v git >/dev/null; then
-    log "installing ffmpeg/git..."
-    apt-get update -qq && apt-get install -y -qq ffmpeg git python3-venv python3-dev
+if ! command -v ffmpeg >/dev/null || ! command -v git >/dev/null || ! python3 -c "import ensurepip" 2>/dev/null \
+   || ! dpkg -s python3-dev >/dev/null 2>&1; then
+    log "installing ffmpeg/git/python3-venv/python3-dev..."
+    apt-get update -qq
+    apt-get install -y -qq ffmpeg git python3-venv python3-dev
 fi
 
 if [[ ! -d "$FH/.git" ]]; then
@@ -75,7 +77,7 @@ fi
 if [[ ! -f "$VENV/.ready" ]]; then
     # inference.py opens flash_head/configs/infer_params.yaml relative to CWD -> must run from repo root.
     log "import check: flash_head.inference (cwd=$FH)..."
-    (cd "$FH" && PYTHONPATH="$FH" "$VENV/bin/python" -c "import torch, flash_head.inference as m; print('import ok, cuda =', torch.cuda.is_available())") \
+    (cd "$FH" && PYTHONPATH="$FH" "$VENV/bin/python" -c "import torch, librosa, soundfile, PIL, flash_head.inference as m; assert torch.cuda.is_available(), 'torch cannot see the GPU (driver too old for cu128? need >=570)'; print('import ok, cuda = True')") \
         || { log "ERROR: flash_head import failed (see above); venv kept, only this check re-runs next time"; exit 1; }
     touch "$VENV/.ready"
 fi

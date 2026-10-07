@@ -38,7 +38,7 @@ chk "bakeoff deps importable with $PY (httpx, PIL)" "$PY -c 'import httpx, PIL'"
 
 echo "== SECRETS =="
 PAT='(hf_[A-Za-z0-9]{30,}|nvapi-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16}|"private_key":)'
-chk "no secrets in tracked files" "! git ls-files -z | xargs -0 grep -IEl '$PAT'" "remove it, rotate it, rewrite history if pushed"
+chk "no secrets in tracked files" "! git ls-files -z -- ':!deploy/predeploy.sh' | xargs -0 grep -IEl '$PAT'" "remove it, rotate it, rewrite history if pushed"
 chk ".env is gitignored" "git check-ignore -q .env" "add .env to .gitignore"
 
 echo
