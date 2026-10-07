@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Miranda Voice Studio</title>
+<style>
+/* ─── tokens ──────────────────────────────────────────────────────── */
+:root {
+  --bg:          #0c0c10;
+  --surface:     #14141b;
+  --surface2:    #1c1c26;
+  --border:      #28283a;
+  --fg:          #e6e6f0;
+  --fg2:         #8888a8;
+  --accent:      #b97aff;
+  --accent-dim:  #7040aa;
+  --accent-glow: #b97aff1a;
+  --good:        #45c87c;
+  --warn:        #f0b030;
+  --bad:         #e84060;
+  --tag-af:      #7aaaff;
+  --tag-bf:      #ffb060;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:          #f0eff8;
+    --surface:     #ffffff;
+    --surface2:    #e8e7f4;
+    --border:      #d0cee8;
+    --fg:          #14141e;
+    --fg2:         #58567a;
+    --accent:      #7a30cc;
+    --accent-dim:  #b080f0;
+    --accent-glow: #7a30cc14;
+    --good:        #1a9458;
+    --warn:        #b06808;
+    --bad:         #cc2040;
+    --tag-af:      #2858c4;
+    --tag-bf:      #a85c08;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg:#f0eff8;--surface:#ffffff;--surface2:#e8e7f4;--border:#d0cee8;
+  --fg:#14141e;--fg2:#58567a;--accent:#7a30cc;--accent-dim:#b080f0;
+  --accent-glow:#7a30cc14;--good:#1a9458;--warn:#b06808;--bad:#cc2040;
+  --tag-af:#2858c4;--tag-bf:#a85c08;color-scheme:light;
+}
+
+/* ─── reset / base ────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+button { cursor: pointer; font-family: inherit; }
+input  { font-family: inherit; }
+code   { font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace; }
+
+/* ─── layout ──────────────────────────────────────────────────────── */
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100%;
+}
+
+/* ─── header ──────────────────────────────────────────────────────── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.brand {
+  display: flex; align-items: center; gap: 12px;
+}
+.brand-orb {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #d4a0ff, #7030cc);
+  box-shadow: 0 0 18px #b97aff55;
+  flex-shrink: 0;
+}
+.brand-text h1 { font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
+.brand-text p  { font-size: 12px; color: var(--fg2); }
+
+.header-right { display: flex; align-items: center; gap: 10px; }
+
+.api-pill {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 12px;
+  font-size: 12px; color: var(--fg2);
+}
+.api-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--warn);
+  transition: background .3s;
+}
+.api-dot.live  { background: var(--good); }
+.api-dot.dead  { background: var(--bad); }
+.api-dot.check { animation: blink 1s ease-in-out infinite; }
+
+.theme-btn {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--fg2); border-radius: 8px; padding: 6px 10px; font-size: 16px;
+  transition: all .15s;
+}
+.theme-btn:hover { border-color: var(--fg2); color: var(--fg); }
+
+/* ─── main two-pane ───────────────────────────────────────────────── */
+main {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+}
+
+/* ─── sidebar ─────────────────────────────────────────────────────── */
+aside {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 14px;
+  display: flex; flex-direction: column; gap: 4px;
+  overflow-y: auto;
+}
+@media (max-width: 600px) {
+  aside {
+    flex-direction: row; flex-wrap: wrap;
+    border-right: none; border-bottom: 1px solid var(--border);
+    padding: 12px 16px; gap: 8px;
+  }
+}
+.sidebar-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .09em;
+  color: var(--fg2); text-transform: uppercase;
+  padding: 10px 8px 4px;
+}
+@media (max-width: 600px) { .sidebar-label { display: none; } }
+
+.filter-btn {
+  background: transparent; border: 1px solid transparent;
+  color: var(--fg2); border-radius: 8px; padding: 8px 10px;
+  font-size: 13px; text-align: left;
+  display: flex; align-items: center; gap: 8px;
+  transition: all .15s;
+}
+.filter-btn:hover { background: var(--surface2); color: var(--fg); }
+.filter-btn.on {
+  background: var(--accent-glow);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+.f-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.f-count {
+  margin-left: auto; font-size: 11px;
+  background: var(--surface2); border-radius: 4px; padding: 1px 5px;
+  color: var(--fg2);
+}
+@media (max-width: 600px) { .f-count { display: none; } }
+
+.sidebar-spacer { flex: 1; }
+.sidebar-note {
+  font-size: 11px; color: var(--fg2); line-height: 1.7;
+  padding: 8px; background: var(--surface2); border-radius: 8px;
+  border: 1px solid var(--border);
+}
+@media (max-width: 600px) { .sidebar-note { display: none; } }
+
+/* ─── card grid ───────────────────────────────────────────────────── */
+section {
+  padding: 24px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+@media (max-width: 600px) { section { padding: 16px; } }
+
+.card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: border-color .18s, box-shadow .18s;
+}
+.card:hover { border-color: var(--accent-dim); }
+.card.selected { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-glow); }
+.card.playing  { border-color: var(--good);   box-shadow: 0 0 0 4px #45c87c18; }
+
+.card-head {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 8px;
+}
+.card-name { font-size: 19px; font-weight: 700; letter-spacing: -.3px; }
+.accent-tag {
+  font-size: 11px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; border-radius: 5px; padding: 3px 8px;
+  flex-shrink: 0;
+}
+.af { background: #7aaaff18; color: var(--tag-af); }
+.bf { background: #ffb06018; color: var(--tag-bf); }
+
+.card-style { font-size: 13px; color: var(--fg2); }
+.card-use {
+  font-size: 12px; background: var(--surface2); border-radius: 7px;
+  padding: 7px 10px; color: var(--fg2); line-height: 1.6;
+}
+.card-use b { color: var(--fg); font-weight: 500; }
+
+.progress {
+  height: 3px; background: var(--border); border-radius: 2px;
+  overflow: hidden; display: none;
+}
+.progress.show { display: block; }
+.progress-fill {
+  height: 100%; width: 0;
+  background: var(--good); border-radius: 2px;
+  transition: width .1s linear;
+}
+
+.card-actions { display: flex; gap: 8px; }
+.btn-play {
+  flex: 1; padding: 8px 14px;
+  background: var(--accent-glow); border: 1px solid var(--accent-dim);
+  color: var(--accent); border-radius: 9px;
+  font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  transition: all .15s;
+}
+.btn-play:hover:not(:disabled) { background: var(--accent-dim); color: #fff; }
+.btn-play:disabled { opacity: .4; cursor: not-allowed; }
+
+.btn-set {
+  padding: 8px 14px;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--fg2); border-radius: 9px;
+  font-size: 13px; font-weight: 500;
+  transition: all .15s;
+}
+.btn-set:hover { border-color: var(--fg2); color: var(--fg); }
+.card.selected .btn-set { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* playing waveform */
+.wave { display: flex; align-items: center; gap: 2px; height: 14px; }
+.wb {
+  width: 3px; background: var(--good); border-radius: 2px;
+  animation: wav .75s ease-in-out infinite;
+}
+.wb:nth-child(1){animation-delay:0s}
+.wb:nth-child(2){animation-delay:.1s}
+.wb:nth-child(3){animation-delay:.2s}
+.wb:nth-child(4){animation-delay:.1s}
+.wb:nth-child(5){animation-delay:0s}
+
+/* ─── preview bar ─────────────────────────────────────────────────── */
+footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 14px 24px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+@media (max-width: 600px) { footer { padding: 12px 16px; gap: 8px; } }
+
+.foot-label { font-size: 12px; color: var(--fg2); white-space: nowrap; flex-shrink: 0; }
+.text-input {
+  flex: 1; min-width: 140px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--fg); border-radius: 9px; padding: 9px 13px; font-size: 14px;
+  outline: none; transition: border-color .15s;
+}
+.text-input:focus { border-color: var(--accent-dim); }
+.text-input::placeholder { color: var(--fg2); }
+
+.url-input {
+  width: 190px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--fg2); border-radius: 9px; padding: 9px 12px;
+  font-size: 12px; font-family: ui-monospace, monospace; outline: none;
+  transition: border-color .15s;
+}
+.url-input:focus { border-color: var(--accent-dim); color: var(--fg); }
+@media (max-width: 600px) { .url-input { display: none; } }
+
+.active-pill {
+  display: none; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--fg2); white-space: nowrap;
+}
+.active-pill.show { display: flex; }
+.active-id {
+  font-size: 12px; font-family: ui-monospace, monospace;
+  background: var(--accent-glow); border: 1px solid var(--accent-dim);
+  color: var(--accent); border-radius: 5px; padding: 2px 8px;
+}
+.copy-btn {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--fg2); border-radius: 8px; padding: 7px 12px;
+  font-size: 12px; font-family: ui-monospace, monospace;
+  transition: all .15s; white-space: nowrap;
+}
+.copy-btn:hover { border-color: var(--fg2); color: var(--fg); }
+.copy-btn.ok { border-color: var(--good); color: var(--good); }
+
+/* ─── keyframes ───────────────────────────────────────────────────── */
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+@keyframes wav   { 0%,100%{height:3px;opacity:.5} 50%{height:13px;opacity:1} }
+@media (prefers-reduced-motion: reduce) {
+  .wb, .api-dot.check { animation: none; }
+  .wb { height: 8px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-orb"></div>
+    <div class="brand-text">
+      <h1>Miranda Voice Studio</h1>
+      <p>Kokoro 82M · Female voices</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="api-pill">
+      <div class="api-dot check" id="api-dot"></div>
+      <span id="api-label">checking…</span>
+    </div>
+    <button class="theme-btn" id="theme-btn" title="Toggle theme" onclick="toggleTheme()">☀</button>
+  </div>
+</header>
+
+<main>
+  <aside id="sidebar">
+    <div class="sidebar-label">Filter</div>
+    <button class="filter-btn on" data-f="all"       onclick="filter('all',this)">
+      All voices <span class="f-count" id="cnt-all">7</span>
+    </button>
+    <button class="filter-btn"    data-f="american"  onclick="filter('american',this)">
+      <div class="f-dot" style="background:var(--tag-af)"></div>
+      American <span class="f-count" id="cnt-american">5</span>
+    </button>
+    <button class="filter-btn"    data-f="british"   onclick="filter('british',this)">
+      <div class="f-dot" style="background:var(--tag-bf)"></div>
+      British <span class="f-count" id="cnt-british">2</span>
+    </button>
+
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-note">
+      Preview hits Kokoro on<br>
+      <code>localhost:8012</code>.<br><br>
+      Set active voice:<br>
+      <code style="color:var(--accent);font-size:10px">TTS_VOICE=af_heart</code><br><br>
+      Default: <code>af_heart</code>
+    </div>
+  </aside>
+
+  <section id="grid"></section>
+</main>
+
+<footer>
+  <span class="foot-label">Preview text</span>
+  <input class="text-input" id="preview-txt" type="text"
+    placeholder="Type something for Miranda to say…"
+    value="Hi, I'm Miranda. How can I help you today?">
+  <span class="foot-label">API</span>
+  <input class="url-input"  id="api-url" value="http://localhost:8012"
+    title="Kokoro base URL — change if tunnelled to another port">
+  <div class="active-pill" id="active-pill">
+    Active <span class="active-id" id="active-id">af_heart</span>
+  </div>
+  <button class="copy-btn" id="copy-btn" style="display:none" onclick="copyId()">
+    Copy ID
+  </button>
+</footer>
+
+<script>
+const VOICES = [
+  {id:"af_heart",   name:"Heart",    accent:"American", style:"Warm, conversational",       use:"General avatar, customer-facing",          sample:"Hi, I'm Miranda. How can I help you today?"},
+  {id:"af_bella",   name:"Bella",    accent:"American", style:"Bright, energetic",           use:"Upbeat interactions, demos",               sample:"Great to meet you — let's get started!"},
+  {id:"af_sarah",   name:"Sarah",    accent:"American", style:"Clear, professional",         use:"Business, formal presentations",           sample:"I've reviewed your request and I'm ready to assist."},
+  {id:"af_nicole",  name:"Nicole",   accent:"American", style:"Calm, measured",              use:"Long-form narration, onboarding",           sample:"Welcome. Take your time — I'm here whenever you need me."},
+  {id:"af_sky",     name:"Sky",      accent:"American", style:"Youthful, approachable",      use:"Casual chat, Gen-Z tone",                  sample:"Okay so here's the deal — it's actually pretty simple."},
+  {id:"bf_emma",    name:"Emma",     accent:"British",  style:"Polished, articulate",        use:"Premium brand voice, executive assistant", sample:"Lovely to speak with you. Shall we begin?"},
+  {id:"bf_isabella",name:"Isabella", accent:"British",  style:"Elegant, confident",          use:"Luxury, editorial, storytelling",          sample:"The world is full of extraordinary stories. Let me tell you one."},
+];
+
+let activeFilter = "all";
+let selected     = null;
+let playing      = null;
+let audio        = null;
+
+function filter(f, btn) {
+  activeFilter = f;
+  document.querySelectorAll(".filter-btn").forEach(b => b.classList.toggle("on", b===btn));
+  render();
+}
+
+function render() {
+  const list = activeFilter === "all"
+    ? VOICES
+    : VOICES.filter(v => v.accent.toLowerCase() === activeFilter);
+  const g = document.getElementById("grid");
+  if (!list.length) { g.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--fg2)">No voices match.</div>`; return; }
+  g.innerHTML = list.map(v => {
+    const tag  = v.id.startsWith("af_") ? "af" : "bf";
+    const isSel = selected === v.id;
+    const isPly = playing  === v.id;
+    return `
+<div class="card${isSel?" selected":""}${isPly?" playing":""}" id="card-${v.id}">
+  <div class="card-head">
+    <div class="card-name">${v.name}</div>
+    <span class="accent-tag ${tag}">${v.accent}</span>
+  </div>
+  <div class="card-style">${v.style}</div>
+  <div class="card-use"><b>Best for:</b> ${v.use}</div>
+  <div class="progress${isPly?" show":""}" id="prog-${v.id}">
+    <div class="progress-fill" id="fill-${v.id}"></div>
+  </div>
+  <div class="card-actions">
+    <button class="btn-play" id="btn-${v.id}" onclick="preview('${v.id}')">
+      ${isPly
+        ? `<span class="wave">${[1,2,3,4,5].map(()=>`<div class="wb"></div>`).join("")}</span> Playing`
+        : "▶ Preview"}
+    </button>
+    <button class="btn-set" onclick="setActive('${v.id}')">
+      ${isSel ? "✓ Active" : "Set active"}
+    </button>
+  </div>
+</div>`;
+  }).join("");
+}
+
+function setActive(id) {
+  selected = id;
+  document.getElementById("active-pill").classList.add("show");
+  document.getElementById("active-id").textContent = id;
+  document.getElementById("copy-btn").style.display = "inline-block";
+  render();
+}
+
+async function preview(id) {
+  if (playing === id) { stopAudio(); return; }
+  stopAudio();
+  playing = id;
+  render();
+
+  const v    = VOICES.find(v => v.id === id);
+  const text = document.getElementById("preview-txt").value.trim() || v.sample;
+  const host = document.getElementById("api-url").value.replace(/\/$/, "");
+
+  try {
+    const r = await fetch(`${host}/v1/audio/speech`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({model:"kokoro", input:text, voice:id, response_format:"mp3", speed:1.0})
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    const url  = URL.createObjectURL(blob);
+    audio = new Audio(url);
+    audio.addEventListener("timeupdate", () => {
+      const f = document.getElementById(`fill-${id}`);
+      if (f && audio.duration) f.style.width = `${audio.currentTime/audio.duration*100}%`;
+    });
+    audio.addEventListener("ended", stopAudio);
+    audio.play();
+  } catch(e) {
+    playing = null; render();
+    markApiDown(`Preview failed: ${e.message}`);
+  }
+}
+
+function stopAudio() {
+  if (audio) { audio.pause(); audio = null; }
+  playing = null;
+  render();
+}
+
+function copyId() {
+  if (!selected) return;
+  const btn = document.getElementById("copy-btn");
+  navigator.clipboard.writeText(selected)
+    .then(() => { btn.textContent = "Copied!"; btn.classList.add("ok"); setTimeout(()=>{ btn.textContent="Copy ID"; btn.classList.remove("ok"); }, 1800); })
+    .catch(() => { btn.textContent = selected; });
+}
+
+function markApiDown(msg) {
+  const dot = document.getElementById("api-dot");
+  dot.className = "api-dot dead";
+  document.getElementById("api-label").textContent = "Kokoro offline";
+}
+
+async function checkApi() {
+  const host = document.getElementById("api-url").value.replace(/\/$/, "");
+  const dot  = document.getElementById("api-dot");
+  const lbl  = document.getElementById("api-label");
+  dot.className = "api-dot check";
+  try {
+    const r = await fetch(`${host}/health`, {signal: AbortSignal.timeout(2500)});
+    if (r.ok) {
+      dot.className = "api-dot live";
+      lbl.textContent = new URL(host).host + " · live";
+    } else throw new Error();
+  } catch {
+    dot.className = "api-dot dead";
+    lbl.textContent = new URL(host).host + " · offline";
+  }
+}
+
+document.getElementById("api-url").addEventListener("change", checkApi);
+
+// theme toggle — persist in localStorage
+function toggleTheme() {
+  const root = document.documentElement;
+  const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+  root.setAttribute("data-theme", next);
+  document.getElementById("theme-btn").textContent = next === "dark" ? "☀" : "☾";
+  try { localStorage.setItem("mvs-theme", next); } catch {}
+}
+try {
+  const t = localStorage.getItem("mvs-theme");
+  if (t) { document.documentElement.setAttribute("data-theme", t); document.getElementById("theme-btn").textContent = t==="dark"?"☀":"☾"; }
+} catch {}
+
+render();
+checkApi();
+</script>
+</body>
+</html>
