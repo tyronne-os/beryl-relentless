@@ -17,6 +17,7 @@ sudo apt update && sudo apt install -y google-cloud-cli
 gcloud --version
 git clone https://github.com/tyronne-os/beryl-relentless
 cd beryl-relentless
+git checkout claude/brave-pascal-xjvmwk   # deploy fixes land here first; preflight fails if you are missing them
 pip3 install httpx pillow     # needed by bakeoff/scorecard_runner.py and prep_fixture.sh
 ```
 

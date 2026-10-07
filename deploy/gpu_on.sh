@@ -12,7 +12,7 @@ SCRIPT_TAG=gpu_on
 cd "$(dirname "$0")/.."
 source deploy/lib.sh
 
-HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-300}"   # service listens only after the model loads
 RUN_BAKEOFF=1; [[ "${1:-}" == "--no-bakeoff" ]] && RUN_BAKEOFF=0
 
 ./deploy/preflight.sh || { log "preflight failed — fix the FAILs above, nothing was changed"; exit 1; }
@@ -55,10 +55,17 @@ tunnel_start
 curl -sf -m 5 "http://localhost:${RENDER_PORT}/health" >/dev/null \
     && log "tunnel OK" || log "WARN: tunnel not answering yet (see /tmp/beryl_tunnel.log)"
 
-MODEL=$(curl -s -m 5 "http://localhost:${RENDER_PORT}/health" | python3 -c "import sys,json;print(json.load(sys.stdin).get('model','?'))" 2>/dev/null || echo "?")
-if [[ "$MODEL" == "passthrough" ]]; then
-    log "WARNING: render model = passthrough (no real model loaded). L2 is NOT real yet."
+HEALTH=$(node_ssh "curl -s -m 5 localhost:${RENDER_PORT}/health" 2>/dev/null || echo '{}')
+MODEL=$(echo "$HEALTH" | python3 -c "import sys,json;print(json.load(sys.stdin).get('model','?'))" 2>/dev/null || echo "?")
+if [[ "$MODEL" != flashhead-* ]]; then
+    log "FAIL: render model = '$MODEL' (not a real model). load_error:"
+    echo "$HEALTH" | python3 -c "import sys,json;print('   ', json.load(sys.stdin).get('load_error'))" 2>/dev/null || echo "    $HEALTH"
+    log "last service logs:"
+    node_ssh "sudo journalctl -u beryl-render -n 30 --no-pager" || true
+    log "L2 is NOT live. Tunnel left open for debugging; ./deploy/gpu_off.sh --keep-vm closes it."
+    exit 1
 fi
+log "model loaded: $MODEL"
 
 log "flipping controller to L2..."
 curl -s -m 5 -X POST "${CONTROLLER_URL}/stage/upgrade" -H "Content-Type: application/json" \

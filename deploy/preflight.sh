@@ -14,6 +14,26 @@ pass() { printf '  [ OK ] %s\n' "$1"; }
 warn() { printf '  [WARN] %s\n' "$1"; WARNS=$((WARNS+1)); }
 fail() { printf '  [FAIL] %s\n         -> %s\n' "$1" "$2"; FAILS=$((FAILS+1)); }
 
+echo "== REPO =="
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-claude/brave-pascal-xjvmwk}"
+BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+pass "checkout: $BR @ $(git rev-parse --short HEAD 2>/dev/null)"
+if timeout 15 git fetch -q origin "+refs/heads/$DEPLOY_BRANCH:refs/remotes/origin/$DEPLOY_BRANCH" 2>/dev/null \
+   && git rev-parse -q --verify "origin/$DEPLOY_BRANCH" >/dev/null; then
+    BEHIND=0
+    if [[ "$BR" != "$DEPLOY_BRANCH" ]] && git rev-parse -q --verify '@{u}' >/dev/null 2>&1; then
+        timeout 15 git fetch -q origin 2>/dev/null || true
+        BEHIND=$(git rev-list --count 'HEAD..@{u}')
+        (( BEHIND > 0 )) && fail "local checkout is $BEHIND commit(s) behind its upstream" "run: git pull"
+    fi
+    MISSING=$(git rev-list --count HEAD..origin/"$DEPLOY_BRANCH")
+    (( MISSING > 0 )) && fail "$MISSING deploy fix(es) on origin/$DEPLOY_BRANCH are not in your checkout" \
+        "run: git fetch && git checkout $DEPLOY_BRANCH && git pull"
+    (( BEHIND == 0 && MISSING == 0 )) && pass "up to date with origin (includes $DEPLOY_BRANCH)"
+else
+    warn "git fetch failed (offline?) — cannot confirm you have the latest deploy fixes"
+fi
+
 echo "== LOCAL =="
 for c in gcloud curl python3 ssh; do
     command -v "$c" >/dev/null && pass "$c installed" || fail "$c missing" "install it (gcloud: sudo apt install google-cloud-cli)"
@@ -64,7 +84,7 @@ if (( FAILS == 0 )) && [[ "${STATUS_STOPPED:-0}" != 1 ]]; then
     REMOTE=$(node_ssh '
         echo "gpu=$(nvidia-smi --query-gpu=name,memory.free --format=csv,noheader 2>/dev/null | tr -d " " || echo none)"
         echo "disk_gb=$(df -BG --output=avail /opt 2>/dev/null | tail -1 | tr -dc 0-9)"
-        echo "venv=$([ -f /opt/beryl/venv-fh/.ready ] && echo yes || echo no)"
+        echo "venv=$([ -f /opt/beryl/venv-fh/.ready ] && echo ready || { [ -f /opt/beryl/venv-fh/.built ] && echo built || echo no; })"
         echo "unit_port=$(grep -o "RENDER_PORT=[0-9]*" /etc/systemd/system/beryl-render.service 2>/dev/null | cut -d= -f2)"
         echo "svc=$(systemctl is-active beryl-render 2>/dev/null)"
         echo "port_owner=$(sudo ss -ltnp 2>/dev/null | grep ":'"$RENDER_PORT"' " | grep -o "users:((\"[a-z0-9._-]*\"" | head -1)"
@@ -77,7 +97,11 @@ if (( FAILS == 0 )) && [[ "${STATUS_STOPPED:-0}" != 1 ]]; then
         get() { echo "$REMOTE" | sed -n "s/^$1=//p"; }
         G=$(get gpu);       [[ "$G" == *L4* || "$G" == *T4* ]] && pass "GPU visible: $G" || fail "no GPU visible to nvidia-smi" "driver missing; setup_gpu_node.sh will try, may need reboot"
         D=$(get disk_gb);   [[ "${D:-0}" -ge 30 ]] && pass "disk free: ${D} GB" || fail "only ${D:-?} GB free on /opt" "weights need ~30 GB; delete old model files"
-        [[ "$(get venv)" == yes ]] && pass "python venv present" || warn "FlashHead venv not built yet (first run ~10 min)"
+        case "$(get venv)" in
+            ready) pass "FlashHead venv ready (import check passed)" ;;
+            built) warn "FlashHead venv built, import check not passed yet (gpu_on.sh re-runs only the check)" ;;
+            *)     warn "FlashHead venv not built yet (first run ~10 min)" ;;
+        esac
         UP=$(get unit_port)
         if [[ -z "$UP" ]]; then warn "systemd unit not installed yet (gpu_on.sh will write it)"
         elif [[ "$UP" != "$RENDER_PORT" ]]; then warn "unit uses port $UP but config says $RENDER_PORT (gpu_on.sh rewrites it)"
