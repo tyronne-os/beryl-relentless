@@ -1,4 +1,4 @@
-# CRANE-IT V1 Session Handoff — Updated 2026-10-07
+# CRANE-IT V1 Session Handoff — Updated 2026-10-07 (Session 2)
 
 **Next agent: read this top-to-bottom. Everything you need is here.**
 
@@ -6,16 +6,63 @@
 
 ## FINISH LIST (the only work left for a working L2 demo; do in this order)
 Execution rule: run these from a session that HAS the GCP key and ssh (laptop or berylize-node), never relay commands to the operator.
-1. Real speech fixture: `bakeoff/fixtures/hello_beryl.wav` (16 kHz mono, ~5 s) and `long_session_30s.wav`. Cloud container has no TTS and no HF access; record on a phone or generate on the node.
-2. `./deploy/gpu_on.sh` (predeploy gate runs first). Expect: motion PASS, fps PASS (~35), first-chunk ~689 ms FAIL (decision, not a bug).
-3. Save a real clip: have `/render` write the frames to mp4 so there is something to show (photo in -> speaking avatar out).
-4. Fix TTS/MOTION port clash in `src/server/avatar_chain.py` (both 9522).
+1. ~~Fix TTS/MOTION port clash~~ **DONE** — `avatar_chain.py` fixed, Kokoro now on port 8012.
+2. Real speech fixtures — run on the node: `sudo apt install -y espeak-ng sox && bash bakeoff/make_fixtures.sh`
+3. `./deploy/gpu_on.sh` (predeploy gate runs first). Expect: motion PASS, fps PASS (~35), first-chunk ~689 ms FAIL (decision, not a bug).
+4. Save a real clip: have `/render` write the frames to mp4 (photo in → speaking avatar out).
 5. Lip-sync measurement (SyncNet-style) in VERIFY.
 6. `./deploy/gpu_off.sh` when done (VM bills while running).
 
+## LOCAL CODING AGENT (free, no Claude tokens)
+Berylize 14B runs on the GPU node itself — use it for routine edits/searches to save Claude tokens for hard reasoning.
+```bash
+# install once on the node
+curl -fsSL https://ollama.com/install.sh | sudo sh
+ollama pull qwen2.5-coder:14b
+ollama run qwen2.5-coder:14b    # interactive chat on the L4, zero laptop RAM needed
+```
+Or from laptop with tunnel open (`bash deploy/gpu_ollama.sh`):
+```bash
+OLLAMA_HOST=http://localhost:11434 ollama run qwen2.5-coder:14b
+```
+Modelfile with project persona: `models/Berylize.modelfile` — `ollama create berylize14b -f models/Berylize.modelfile`
+
 ---
 
-## SESSION UPDATE 2026-10-07 — L2 GPU deploy COMPLETE
+## SESSION UPDATE 2026-10-07 Session 2 — hardening, local agent, port fixes
+
+### What was accomplished
+| Item | Status |
+|---|---|
+| TTS/MOTION port collision fixed | **DONE** — `avatar_chain.py` TTS was hitting port 9522 (MOTION). Now correctly calls Kokoro at port 8012 via `/v1/audio/speech` |
+| Speech fixture generator | **DONE** — `bakeoff/make_fixtures.sh` generates real 16 kHz WAVs from espeak-ng on the node |
+| Berylize 14B local agent | **DONE** — `models/Berylize.modelfile` (Ollama, qwen2.5-coder:14b). Runs on GPU node, zero laptop RAM |
+| GPU Ollama deploy script | **DONE** — `deploy/gpu_ollama.sh` installs Ollama on the node, pulls model, opens tunnel on port 11434 |
+| Pipeline progress | **~49% overall; ~75% of L2 demo path** |
+
+### Next steps (priority order)
+1. Create fixtures on node: `sudo apt install -y espeak-ng sox && bash bakeoff/make_fixtures.sh`
+2. Run `./deploy/gpu_on.sh` and scorecard with real audio
+3. Build photo-in endpoint → mp4 clip output (the demo deliverable)
+4. Lip-sync measurement in VERIFY (last critical red test)
+5. LeapTalk / AvatarForcing bakeoff to settle first-frame latency decision
+
+### Port map (complete, no collisions)
+| Port | Service |
+|---|---|
+| 8012 | Kokoro TTS |
+| 8013 | Speaches TTS fallback |
+| 9520 | ASR (faster-whisper) |
+| 9521 | LISTEN (Duplug) |
+| 9522 | MOTION |
+| 9523 | GPU render (tunnelled from node) |
+| 9524 | Render fan-out |
+| 9525 | VERIFY |
+| 11434 | Ollama on GPU node (tunnel via `deploy/gpu_ollama.sh`) |
+
+---
+
+## SESSION UPDATE 2026-10-07 Session 1 — L2 GPU deploy COMPLETE
 
 ### What was accomplished
 The GPU render pipeline (L2) is now live on `berylize-node` (project `posh-eden`, zone `us-east1-c`).
