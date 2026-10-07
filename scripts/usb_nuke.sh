@@ -16,8 +16,8 @@ COUNT="${1:-3}"
 COUNTDOWN="${2:-4}"
 
 R=$'\033[0;31m'; G=$'\033[0;32m'; C=$'\033[0;36m'; B=$'\033[1m'; N=$'\033[0m'
-say()  { echo "${C}▸ $*${N}"; }
-ok()   { echo "${G}✓ $*${N}"; }
+say()  { echo "${C}▸ $*${N}" >&2; }
+ok()   { echo "${G}✓ $*${N}" >&2; }
 fail() { echo "${R}✗ $*${N}" >&2; }
 
 # ── tools ────────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ usb_disks() {   # whole-disk USB devices (not partitions), real size only
 
 wait_for_stick() {
   local skip="$BOOT"
-  echo
+  echo >&2
   say "Plug in USB stick #$1 now…  (waiting)"
   while true; do
     for d in $(usb_disks); do
@@ -60,7 +60,7 @@ wait_for_stick() {
 
 wait_for_removal() {
   say "Unplug it when you see the next prompt…"
-  while lsblk -dn -o NAME 2>/dev/null | grep -qx "$1"; do sleep 1; done
+  while [[ -b "/dev/$1" ]]; do sleep 1; done
 }
 
 nuke() {
@@ -122,6 +122,9 @@ done_n=0
 for ((n=1; n<=COUNT; n++)); do
   label=$(printf 'BERYL-%02d' "$n")
   name=$(wait_for_stick "$n")
+  if [[ ! "$name" =~ ^[a-z0-9]+$ || ! -b "/dev/$name" ]]; then
+    fail "bad device name '$name' — aborting, nothing written"; exit 1
+  fi
   if nuke "$name" "$label"; then done_n=$((done_n+1)); else fail "stick #$n failed — continuing"; fi
   ((n<COUNT)) && wait_for_removal "$name"
 done
