@@ -79,7 +79,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/beryl/render
 Environment="WEIGHTS_DIR=/opt/beryl/weights"
-Environment="RENDER_PORT=8023"
+Environment="RENDER_PORT=9523"
 ExecStart=/opt/beryl/venv/bin/python render_service.py
 Restart=on-failure
 RestartSec=5

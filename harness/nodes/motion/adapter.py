@@ -1,5 +1,5 @@
 """
-Motion Node — audio → motion latents server on port 8022.
+Motion Node — audio → motion latents server on port 9522.
 Primary: JoyVASA (2411.09209) — open VASA-style, decoupled facial representation.
 Fallback: FLOAT (2412.01064) — flow matching in motion latent space.
 Last resort: css_labels — pass JEV performance dict as-is to client CSS animator.
@@ -26,7 +26,7 @@ log = logging.getLogger("motion")
 
 MODEL_SLOT = os.environ.get("MOTION_MODEL", "joyvasa")  # joyvasa | float | css_labels
 DEVICE = os.environ.get("MOTION_DEVICE", "cpu")
-PORT = int(os.environ.get("MOTION_PORT", "8022"))
+PORT = int(os.environ.get("MOTION_PORT", "9522"))
 
 _model = None
 _model_ready = False

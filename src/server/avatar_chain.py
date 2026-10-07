@@ -19,10 +19,10 @@ import httpx
 log = logging.getLogger("avatar_chain")
 
 # ── service URLs (all local; override via env) ─────────────────────────────
-_ASR_URL  = os.environ.get("ASR_URL",    "http://localhost:8020/transcribe")
-_TTS_URL  = os.environ.get("TTS_URL",    "http://localhost:8022/tts")       # kokoro
-_MOTION_URL = os.environ.get("MOTION_URL", "http://localhost:8022/generate")
-_LISTEN_URL = os.environ.get("LISTEN_URL", "http://localhost:8021/classify")
+_ASR_URL  = os.environ.get("ASR_URL",    "http://localhost:9520/transcribe")
+_TTS_URL  = os.environ.get("TTS_URL",    "http://localhost:9522/tts")       # kokoro
+_MOTION_URL = os.environ.get("MOTION_URL", "http://localhost:9522/generate")
+_LISTEN_URL = os.environ.get("LISTEN_URL", "http://localhost:9521/classify")
 _LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT_S", "30.0"))
 _CHAIN_TIMEOUT = float(os.environ.get("CHAIN_TIMEOUT_S", "45.0"))
 

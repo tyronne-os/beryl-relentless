@@ -4,8 +4,8 @@ Runs the Tilly Norwood acceptance checklist against the live render node.
 
 Usage:
   python3 bakeoff/scorecard_runner.py \
-      --render-url http://<node-ip>:8023 \
-      --verify-url http://localhost:8025 \
+      --render-url http://<node-ip>:9523 \
+      --verify-url http://localhost:9525 \
       --output bakeoff/results/run.json
 
 Exit 0 = all_green; exit 1 = failures.
@@ -223,8 +223,8 @@ async def main(render_url: str, verify_url: str, output: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--render-url", default="http://localhost:8023")
-    parser.add_argument("--verify-url", default="http://localhost:8025")
+    parser.add_argument("--render-url", default="http://localhost:9523")
+    parser.add_argument("--verify-url", default="http://localhost:9525")
     parser.add_argument("--output", default="bakeoff/results/latest.json")
     args = parser.parse_args()
     sys.exit(asyncio.run(main(args.render_url, args.verify_url, args.output)))

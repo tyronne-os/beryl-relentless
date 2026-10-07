@@ -9,7 +9,7 @@ set -euo pipefail
 PROJECT="${GCP_PROJECT:-posh-eden}"
 ZONE="${GCP_ZONE:-us-east1-c}"
 INSTANCE="berylize-node"
-CONTROLLER_URL="${CONTROLLER_URL:-http://localhost:8000}"
+CONTROLLER_URL="${CONTROLLER_URL:-http://localhost:9500}"
 SA_KEY_PATH="${GCP_SA_KEY_JSON_PATH:-/tmp/sa.json}"
 ACTION="${1:---stop}"
 

@@ -14,7 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 log = logging.getLogger("node.listen")
 
-_DUPLUG_URL = os.environ.get("DUPLUG_API_URL", "http://localhost:8021/classify")
+_DUPLUG_URL = os.environ.get("DUPLUG_API_URL", "http://localhost:9521/classify")
 _TIMEOUT = float(os.environ.get("LISTEN_TIMEOUT_S", "0.5"))
 
 _client = httpx.AsyncClient(timeout=_TIMEOUT)
@@ -118,4 +118,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8021, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=9521, log_level="info")

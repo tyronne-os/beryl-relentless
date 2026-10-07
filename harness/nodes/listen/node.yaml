@@ -12,7 +12,7 @@ latency_p95_ms: 120
 latency_budget_ms: 150
 
 health_probe: http_get
-health_url: http://localhost:8021/health
+health_url: http://localhost:9521/health
 key_env: null
 
 fallbacks:

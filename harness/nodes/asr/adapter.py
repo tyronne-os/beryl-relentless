@@ -1,5 +1,5 @@
 """
-ASR Node — faster-whisper INT8 server on port 8020.
+ASR Node — faster-whisper INT8 server on port 9520.
 Start: python -m harness.nodes.asr.adapter
 Reference: github.com/SYSTRAN/faster-whisper
 """
@@ -111,4 +111,4 @@ async def transcribe_endpoint(body: dict):
 if __name__ == "__main__":
     import uvicorn
     logging.basicConfig(level=logging.INFO)
-    uvicorn.run("harness.nodes.asr.adapter:app", host="0.0.0.0", port=8020, reload=False)
+    uvicorn.run("harness.nodes.asr.adapter:app", host="0.0.0.0", port=9520, reload=False)

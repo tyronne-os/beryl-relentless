@@ -18,7 +18,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 log = logging.getLogger("node.render")
 
-_GPU_RENDER_URL = os.environ.get("GPU_RENDER_URL", "http://localhost:8023/render")
+_GPU_RENDER_URL = os.environ.get("GPU_RENDER_URL", "http://localhost:9523/render")
 _STAGE = os.environ.get("RENDER_STAGE", "L1")
 _TIMEOUT = float(os.environ.get("RENDER_TIMEOUT_S", "5.0"))
 
@@ -160,4 +160,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8024, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=9524, log_level="info")

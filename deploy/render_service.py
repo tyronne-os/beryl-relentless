@@ -22,7 +22,7 @@ log = logging.getLogger("render_service")
 logging.basicConfig(level=logging.INFO)
 
 WEIGHTS_DIR = os.environ.get("WEIGHTS_DIR", "/opt/beryl/weights")
-RENDER_PORT = int(os.environ.get("RENDER_PORT", "8023"))
+RENDER_PORT = int(os.environ.get("RENDER_PORT", "9523"))
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Global model handles

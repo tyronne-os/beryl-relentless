@@ -6,7 +6,7 @@
 #   1. Verify berylize-node is RUNNING (create spot VM if not)
 #   2. Deploy latest render service code to the node
 #   3. Install GPU deps (torch+cuda, flashhead/leaptalk weights)
-#   4. Start render service + health probe (port 8023)
+#   4. Start render service + health probe (port 9523)
 #   5. Register GPU node with controller (flip L1→L2)
 #   6. Run bakeoff scorecard and print results
 #
@@ -20,8 +20,8 @@ set -euo pipefail
 PROJECT="${GCP_PROJECT:-posh-eden}"
 ZONE="${GCP_ZONE:-us-east1-c}"
 INSTANCE="berylize-node"
-RENDER_PORT=8023
-CONTROLLER_URL="${CONTROLLER_URL:-http://localhost:8000}"
+RENDER_PORT=9523
+CONTROLLER_URL="${CONTROLLER_URL:-http://localhost:9500}"
 REPO="https://github.com/tyronne-os/beryl-relentless"
 BRANCH="${GIT_BRANCH:-main}"
 WEIGHTS_DIR="/opt/beryl/weights"
@@ -176,7 +176,7 @@ run_bakeoff() {
     log "Running bakeoff scorecard..."
     python3 bakeoff/scorecard_runner.py \
         --render-url "http://${node_ip}:${RENDER_PORT}" \
-        --verify-url "${CONTROLLER_URL:-http://localhost:8025}" \
+        --verify-url "${CONTROLLER_URL:-http://localhost:9525}" \
         --output "bakeoff/results/$(date +%Y%m%d_%H%M%S).json" \
         2>&1 | tee /tmp/bakeoff_latest.log
     log "Bakeoff complete — results in bakeoff/results/"
