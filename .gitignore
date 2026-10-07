@@ -12,3 +12,8 @@ node_modules/
 runs/
 bakeoff/output/
 *.log
+
+# private reference photos / bake-off outputs
+bakeoff/fixtures/reference.*
+bakeoff/fixtures/*.wav
+bakeoff/results/*.json

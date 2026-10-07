@@ -39,6 +39,12 @@ else
     [[ "$CODE" == "200" ]] && pass "HF_TOKEN accepted by Hugging Face" || fail "HF_TOKEN rejected (HTTP $CODE)" "create a new read token"
 fi
 
+if ls bakeoff/fixtures/reference.jpg bakeoff/fixtures/reference.png >/dev/null 2>&1; then
+    pass "reference face photo present"
+else
+    fail "no reference photo at bakeoff/fixtures/reference.jpg" "run ./deploy/prep_fixture.sh then ./deploy/prep_fixture.sh <number>"
+fi
+
 if (( FAILS > 0 )); then
     echo; echo "Stopping: fix the local FAILs first (remote checks need a working key)."; exit 1
 fi
