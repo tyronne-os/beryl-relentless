@@ -22,6 +22,7 @@ HUGGING_FACE_HUB_TOKEN   # same token, some libs read this name
 NVIDIA_API_KEY           # NVIDIA enterprise NIM key (copied from NGC key)
 NGC_API_KEY              # NGC container pull key
 NGC_ENTERPRISE_KEY       # what deploy.py reads for enterprise NIM endpoints
+ANTHROPIC_API_KEY        # Claude judge for harness/selftest (three-stage self-test)
 GITHUB_TOKEN             # GitHub PAT
 GH_TOKEN                 # same token, gh CLI reads this name
 TYPESAFE_API_KEY         # TypeSafe System One / JEV key (also: JEV_API_KEY)

@@ -34,6 +34,8 @@ Every failure hit so far, in order. Where the exact message was not captured in 
 - JEV (TypeSafe) is never in a repair path; every JEV call has a deterministic local fallback.
 - A JEV answer is untrusted input: validate type, range and choice membership, bound it with a hard deadline, and let it only tighten VERIFY, never loosen it (L19; standards S1-S13 in `docs/JEV-DESIGN.md`).
 - A metric named after a thing must measure that thing: the old "lip-sync" subtracted two timestamps (really first-frame latency). Lip-sync is now measured from the rendered mp4 (L18).
+- A correlation-based measurement must refuse outside its search window instead of returning the best in-window lag: lip-sync with a +-0.4 s window returned 321 ms for a true 450 ms offset at r=0.38 (L20). Test beyond-range inputs, and keep the trust threshold above the aliased values.
+- A judge that is the same model family as the builder must be calibrated on known-good vs known-bad evidence before its scores count; gates stay primary (L21, `docs/SELF-TEST-DESIGN.md`).
 - Vocabularies, thresholds, limits and question wording live in YAML (`harness/jev/jev.yaml`), not as literals repeated across modules; tests check code against the YAML.
 - Every node ships with a smoke test first.
 - Secrets never committed; run a secret scan before every push.

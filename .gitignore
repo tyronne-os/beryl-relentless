@@ -18,3 +18,8 @@ bakeoff/fixtures/reference.*
 bakeoff/fixtures/*.wav
 bakeoff/results/*.json
 bakeoff/results/*.mp4
+
+# self-test: run history and judge cache are local; the baseline file is committed
+bakeoff/results/selftest_ledger.jsonl
+bakeoff/results/selftest_cache/
+bakeoff/results/selftest_clips/

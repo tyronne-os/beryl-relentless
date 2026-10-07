@@ -16,9 +16,9 @@ import subprocess
 import sys
 
 LIPSYNC_MAX_MS = 133.0   # acceptance: |offset| within this
-MIN_PEAK_R = 0.30        # below this the correlation is not trusted -> offset reported as None
+MIN_PEAK_R = 0.45        # below this the correlation is not trusted -> offset reported as None
 MIN_SPEECH_S = 0.8
-LAG_RANGE_S = 0.40
+LAG_RANGE_S = 0.80
 LAG_STEP_S = 0.005
 _SIZE = 192
 _SR = 16000
@@ -110,7 +110,7 @@ def _mouth_signal(frames):
 
 
 def measure_file(path: str) -> dict:
-    out = {"offset_ms": None, "ok": False, "peak_r": None, "raw_offset_ms": None,
+    out = {"offset_ms": None, "ok": False, "peak_r": None, "raw_offset_ms": None, "out_of_range": False,
            "n_frames": 0, "speech_s": 0.0, "reason": None,
            "method": "speech-envelope-rate vs mouth-motion-energy cross-correlation"}
     try:
@@ -166,7 +166,9 @@ def measure_file(path: str) -> dict:
             out["reason"] = f"weak audio/mouth correlation (peak r={r[j]:.2f} < {MIN_PEAK_R}); offset not trusted"
             return out
         if j in (0, len(r) - 1):
-            out["reason"] = "best lag is at the edge of the search range; offset not trusted"
+            out["out_of_range"] = True
+            out["reason"] = (f"audio and video are at least {LAG_RANGE_S * 1000:.0f} ms apart "
+                             f"(best lag at the edge of the search window); exact offset not measurable")
             return out
         out["offset_ms"] = offset_ms
         out["ok"] = lipsync_ok(offset_ms)
@@ -177,6 +179,12 @@ def measure_file(path: str) -> dict:
     except Exception as exc:
         out["reason"] = f"measurement error: {exc!r}"
         return out
+
+
+# Public names for sibling packages (selftest) so they do not import private helpers.
+ffmpeg_exe = _ffmpeg
+decode_audio = _decode_audio
+decode_video_gray = _decode_video
 
 
 if __name__ == "__main__":

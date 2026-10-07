@@ -84,13 +84,21 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         print("known offsets (positive = video late):")
-        for off in (0, 80, -80, 120, -120, 40):
+        for off in (0, 80, -80, 120, -120, 40, 450, -450):
             clip = d / f"o{off}.mp4"
             make_clip(clip, offset_ms=off)
             r = lipsync.measure_file(str(clip))
             got = r["offset_ms"]
             check(f"offset {off:+d} ms", got is not None and abs(got - off) <= TOL_MS,
                   f"measured {got} (r={r['peak_r']}, reason={r['reason']})")
+
+        print("beyond the search window (+-0.8 s) it must refuse, never give a confident wrong number:")
+        for far in (900, -900, 1200):
+            clip = d / f"far{far}.mp4"
+            make_clip(clip, offset_ms=far)
+            r = lipsync.measure_file(str(clip))
+            check(f"offset {far:+d} ms", r["offset_ms"] is None and not r["ok"],
+                  f"offset={r['offset_ms']} r={r['peak_r']} ({r['reason']})")
 
         print("container timestamps are honoured (audio muxed 100 ms later => video 100 ms early):")
         clip = d / "mux.mp4"

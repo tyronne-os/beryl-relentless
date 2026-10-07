@@ -1,0 +1,263 @@
+# Self-test spec — Claude judges Beryl in three stages. Data only (yaml.safe_load), no expressions.
+# Design and reasoning: docs/SELF-TEST-DESIGN.md. Code reads this file; tests check code against it.
+# Rule: change a rubric anchor, gate threshold or fixture HERE, bump rubric_version, re-run calibration.
+version: 1
+rubric_version: 1          # bump on any rubric/anchor/criteria change; invalidates judge cache + calibration
+fixture_set_version: 1     # bump when fixtures change; ledger deltas only compare equal versions
+
+judge:
+  model: claude-opus-5-5   # swap to claude-sonnet-5-5 to cut cost; calibration must be re-run after a swap
+  effort: medium
+  repeats: 3               # independent judgements per evidence bundle; verdict uses the median
+  max_tokens: 6000
+  agreement_min: 0.7       # share of criteria whose repeats span <= 1 point; below = inconclusive
+  calibration_margin: 1.5  # judge must rate known-good this many points above known-bad (mean of criteria)
+  images_max_per_call: 6
+
+scale: {min: 1, max: 5}
+pass: {mean_min: 3.5, criterion_min: 3}   # a stage passes only if ALL gates pass AND judge mean/min clear these
+ratchet: {tolerance: 0.5}                 # a criterion may not fall more than this below its baseline
+
+ports:                                    # from CLAUDE.md port map
+  tts: 8012
+  asr: 9520
+  listen: 9521
+  motion: 9522
+  render: 9523
+  render_fanout: 9524
+  verify: 9525
+  ollama: 11434
+
+stages:
+  voice:
+    title: Vernacular and voice delivery
+    what_judge_sees: >
+      The reply text (and the user turn it answers), plus measured delivery numbers from the synthesised audio.
+      The judge cannot hear audio. Delivery criteria are judged from numbers; a human listening check is an
+      open increment (docs/SELF-TEST-DESIGN.md).
+    gates:                                # deterministic, primary; the judge can never override a failed gate
+      asr_wer_max: 0.10                   # ASR round trip: transcribe the TTS audio, compare to the text spoken
+      clipping_fraction_max: 0.001
+      wpm_min: 110
+      wpm_max: 200
+      lead_silence_s_max: 0.6
+      min_duration_s: 0.5
+    criteria:
+      conversational_register:
+        weight: 2
+        question: Does it sound like a person talking rather than a document being read aloud?
+        anchors:
+          1: Stiff or corporate ("Certainly. I would be delighted to assist"), no contractions, reads like written prose.
+          3: Mostly natural with occasional stiffness or stock phrases.
+          5: Sounds like a real person speaking - contractions, natural rhythm, fragments where people use them, no cliche openers.
+      persona_fit:
+        weight: 1
+        question: Is it recognisably Beryl (warm, curious, direct, supportive) without overacting?
+        anchors:
+          1: Generic assistant voice, off-persona, or contradicts the persona.
+          3: Broadly warm and direct but could be anyone.
+          5: Unmistakably this persona, consistent across turns, never theatrical.
+      speakability:
+        weight: 2
+        question: Can every sentence be spoken naturally in one breath, with nothing a voice would mangle?
+        anchors:
+          1: Markdown, bullet lists, URLs, emoji, symbols, long parenthetical asides, or run-on sentences.
+          3: Speakable but with a few long sentences or awkward numbers/abbreviations.
+          5: Short sentences, numbers and abbreviations written as they are said, nothing a TTS voice would stumble on.
+      responsiveness:
+        weight: 1
+        question: Does it answer what was actually said, at a length that suits a voice conversation?
+        anchors:
+          1: Off-topic, ignores the emotion of the turn, or rambles far beyond what a spoken turn needs.
+          3: On topic but too long or too generic.
+          5: Directly answers, acknowledges feeling where present, one to three spoken sentences for simple turns.
+      delivery_pace_and_pauses:
+        weight: 1
+        evidence: metrics
+        question: From the measured numbers, would the pace and pauses feel natural?
+        anchors:
+          1: Pace outside roughly 110-200 wpm, no pauses at clause boundaries, or long dead air.
+          3: Acceptable pace with uneven pausing.
+          5: Natural pace with pauses landing at clause boundaries.
+      delivery_dynamics:
+        weight: 1
+        evidence: metrics
+        question: From the measured energy and pitch variation, is the delivery neither monotone nor erratic?
+        anchors:
+          1: Flat (energy range under about 3 dB and pitch spread under about 1 semitone) or wildly erratic.
+          3: Some variation, mildly flat or uneven.
+          5: Controlled variation that follows the sentence shape.
+    knobs:
+      conversational_register: {node: llm, change: persona system prompt (spoken register, contractions, no stock openers)}
+      persona_fit: {node: llm, change: persona card wording}
+      speakability: {node: llm, change: system prompt rule - plain sentences, no markdown, numbers as spoken}
+      responsiveness: {node: llm, change: system prompt length guidance for voice turns}
+      delivery_pace_and_pauses: {node: tts, change: Kokoro speed parameter and sentence splitting}
+      delivery_dynamics: {node: tts, change: voice choice (see miranda-voice-ui) or Kokoro voice blend}
+    fixtures:
+      scripted_lines:                     # TTS only, isolates the voice from the LLM
+        - {id: greet, text: "Hi, I'm Beryl. It's really good to meet you."}
+        - {id: numbers, text: "Your appointment is on March fifteenth at two thirty in the afternoon."}
+        - {id: warm, text: "Hey, that sounds like a rough day. Do you want to talk it through?"}
+      llm_turns:                          # LLM then TTS, judges the wording as well
+        - {id: hello, user: "Hey, how's it going?"}
+        - {id: sad, user: "I just found out I didn't get the job."}
+        - {id: factual, user: "How long does it take to get to Boston from New York by train?"}
+        - {id: list_bait, user: "Give me a few ideas for dinner tonight."}
+        - {id: pushback, user: "Honestly I think you're wrong about that."}
+        - {id: smalltalk, user: "Did you sleep okay?"}
+
+  face:
+    title: Lip-sync and facial expression
+    what_judge_sees: >
+      The reference photo, a contact sheet of 8 frames (loud moments, quiet moments, start, end) each labelled with
+      its time and audio level, a strip of 6 consecutive frames at the loudest syllable, and the measured numbers.
+      Stills cannot show blink timing or gaze drift; those are covered by deterministic gates, not by the judge.
+    gates:
+      lipsync_abs_offset_ms_max: 133      # same helper as the scorecard: harness/nodes/verify/lipsync.py
+      lipsync_peak_r_min: 0.45            # must equal lipsync.MIN_PEAK_R (a test enforces it)
+      fps_min: 24
+      frozen_frame_run_max: 4             # longest run of identical consecutive frames
+      painted_motion_required: true       # painted-pixel change, never CSS
+      first_frame_ms_max: 500             # known red today (about 680 ms); reported, tracked by the ratchet
+    criteria:
+      lip_sync_perceived:
+        weight: 2
+        question: In the labelled frames, is the mouth open when the audio is loud and closed in the quiet moments, and do the strip frames show a believable open-close sequence?
+        anchors:
+          1: Mouth open on silence or closed on loud speech, or frames show no mouth movement.
+          3: Roughly follows the audio but shapes look generic or lag.
+          5: Mouth shape clearly tracks the audio level and the strip shows a clean, plausible open-close sequence.
+      expression_match:
+        weight: 2
+        question: Does the face show the intended expression for this fixture (given as intended_emotion), neither blank nor exaggerated?
+        anchors:
+          1: Blank or the wrong emotion.
+          3: Hints of the intended emotion but muted or inconsistent.
+          5: Clearly the intended emotion, subtle, consistent across frames.
+      facial_naturalness:
+        weight: 2
+        question: Eyes, teeth, skin and mouth corners - does anything read as uncanny?
+        anchors:
+          1: Obvious uncanny features (dead or misaligned eyes, melting teeth, rubbery skin).
+          3: Mostly believable with one distracting feature.
+          5: Nothing draws attention as unnatural.
+      artifacts:
+        weight: 1
+        question: Any ghosting, warping at the jaw or hairline, blur, flicker or compression damage?
+        anchors:
+          1: Strong artifacts visible in several frames.
+          3: Minor artifacts in some frames.
+          5: Clean in every frame.
+      identity_hold:
+        weight: 2
+        question: Compared with the reference photo, is it the same person in the first and last frames?
+        anchors:
+          1: Different person or clearly drifting features.
+          3: Recognisably the same but with noticeable shifts (face shape, eye spacing, skin tone).
+          5: Same person throughout.
+      head_pose_plausibility:
+        weight: 1
+        question: Are head position and angle plausible and consistent with natural speaking?
+        anchors:
+          1: Rigid, impossible angles, or sliding head.
+          3: Slightly stiff or limited.
+          5: Natural small movements, no sliding.
+    knobs:
+      lip_sync_perceived: {node: render, change: audio/video offset in the mux and chunk alignment}
+      expression_match: {node: director, change: intensity and micro_by_emotion in harness/jev/jev.yaml}
+      facial_naturalness: {node: render, change: model choice in the bake-off (FlashHead, LeapTalk, AvatarForcing)}
+      artifacts: {node: render, change: resolution, step count, encode quality}
+      identity_hold: {node: render, change: reference conditioning and chunk overlap}
+      head_pose_plausibility: {node: motion, change: motion latent generator and pose smoothing}
+    fixtures:
+      clips:
+        - {id: hello, photo: bakeoff/fixtures/reference.jpg, audio: bakeoff/fixtures/hello_beryl.wav, intended_emotion: warm}
+        - {id: long, photo: bakeoff/fixtures/reference.jpg, audio: bakeoff/fixtures/long_session_30s.wav, intended_emotion: neutral}
+      emotion_on_demand: {enabled: false, reason: render and director do not yet take a requested emotion end to end}
+
+  cluster:
+    title: Cluster and back-end reaction
+    what_judge_sees: >
+      An incident-style report built from measured evidence: node health, per-node timings across the stage 1 and 2
+      runs, fallback counts (which JEV and render paths ran), stage-ladder state, GPU headroom, and any injected-fault
+      outcomes. Text and numbers only.
+    gates:
+      required_nodes_healthy: [tts, asr, render]
+      render_model_not_passthrough: true
+      render_load_error_absent: true
+      turn_total_p95_ms_max: 4000
+      unannounced_fallbacks_max: 0        # a fallback that did not announce itself in source/model fields
+      gpu_vram_free_gb_min: 2
+    criteria:
+      graceful_degradation:
+        weight: 2
+        question: When a component was slow, down or in fallback, did the system keep serving at a lower stage without breaking the turn?
+        anchors:
+          1: Failures break turns or hang them.
+          3: Degrades but with visible stalls or manual intervention.
+          5: Falls back cleanly and keeps the turn within budget.
+      failure_visibility:
+        weight: 2
+        question: Does every fallback announce itself in the data (source, model, load_error) so nothing fails silently?
+        anchors:
+          1: Fallbacks happen with no marker (silent passthrough, swallowed errors).
+          3: Most fallbacks are marked, some are only in logs.
+          5: Every fallback is marked in results and visible to the scorecard.
+      latency_budget:
+        weight: 2
+        question: Do per-node and total turn timings stay inside their budgets with margin?
+        anchors:
+          1: Total turn p95 well over budget or a node far above its p95 budget.
+          3: Within budget on average, tail over.
+          5: Inside budget at p95 with margin.
+      stage_ladder_behavior:
+        weight: 1
+        question: Do L0, L1 and L2 transitions and the fall back to L1 behave as designed?
+        anchors:
+          1: Wrong stage reported or no fallback.
+          3: Correct stages, slow or unclear transitions.
+          5: Correct transitions with warm-up hidden and clean fallback.
+      resource_headroom:
+        weight: 1
+        question: Is there headroom (GPU memory, idle shutdown) so cost and stability are under control?
+        anchors:
+          1: Out of memory risk or the VM left running idle.
+          3: Adequate headroom, idle policy untested.
+          5: Comfortable headroom and idle shutdown verified.
+      recovery:
+        weight: 1
+        question: After an injected fault clears, does the system return to healthy without manual repair?
+        anchors:
+          1: Does not recover without intervention.
+          3: Recovers slowly or partially.
+          5: Recovers fully and promptly. Report not_assessable if no fault was injected.
+    knobs:
+      graceful_degradation: {node: controller, change: stage-ladder FSM and per-node timeouts}
+      failure_visibility: {node: all, change: add source/model/load_error markers to the failing node's result}
+      latency_budget: {node: controller, change: node budgets in each node.yaml; parallelise serial JEV stages}
+      stage_ladder_behavior: {node: controller, change: transition rules and warm-up hiding}
+      resource_headroom: {node: deploy, change: gpu_off idle timeout, model co-residency}
+      recovery: {node: controller, change: health bus retry and re-registration}
+    inject:                               # fault injection stops real services; OFF until you approve it
+      enabled: false
+      scenarios:
+        - {id: kill_tts, action: stop the tts service, expect: turn completes with tts_fallback signalled, recover_within_s: 30}
+        - {id: jev_down, action: set CRANE_JEV off or block the endpoint, expect: every JEV result source is fallback, recover_within_s: 5}
+        - {id: render_down, action: stop the render service, expect: stage reports L1 not L2, recover_within_s: 60}
+        - {id: gpu_vm_stop, action: stop berylize-node, expect: L1 serves the turn, recover_within_s: 180}
+
+calibration:                              # the judge must separate these before its scores count
+  voice:
+    good_text: "Hey! Yeah, I can totally help with that. What are you trying to set up?"
+    bad_text: "Certainly. As an AI language model, I would be pleased to provide comprehensive assistance regarding your inquiry. **Step 1:** Review the following: (a) the documentation at https://example.com/docs; (b) the FAQ."
+    good_metrics: {wpm: 158, wer: 0.02, clipping_fraction: 0.0, lead_silence_s: 0.15, energy_range_db: 11.0, f0_std_semitones: 3.2, pause_count: 2, longest_pause_s: 0.35}
+    bad_metrics: {wpm: 262, wer: 0.31, clipping_fraction: 0.02, lead_silence_s: 1.4, energy_range_db: 1.5, f0_std_semitones: 0.4, pause_count: 0, longest_pause_s: 0.0}
+  cluster:
+    good_report: "All required nodes healthy. render model flashhead-lite, no load_error. Turn total p95 2.1 s against a 4.0 s budget. JEV ran on fallback and every result carried source=fallback. GPU 9.4 GB free."
+    bad_report: "render model passthrough with no load_error field and no source marker. Turn total p95 9.8 s against a 4.0 s budget. tts returned empty audio and the turn still reported done. GPU 0.3 GB free, VM idle for 4 hours."
+  face:
+    degradations:                            # derived automatically from any good clip with ffmpeg
+      av_shift: {targets: [lip_sync_perceived]}                       # audio delayed 400 ms
+      freeze: {targets: [facial_naturalness, head_pose_plausibility]} # video held at about 3 fps
+      blur: {targets: [artifacts]}                                    # heavy gaussian blur
