@@ -91,16 +91,21 @@ cat > librechat.yaml << 'YAML'
 version: 1.1.5
 endpoints:
   custom:
-    - name: \"Qwen on GPU\"
-      apiKey: \"ollama\"
-      baseURL: \"http://localhost:11434/v1/\"
+    - name: "Qwen on GPU"
+      apiKey: "ollama"
+      baseURL: "http://localhost:11434/v1/"
       models:
-        default: [\"qwen2.5-coder:14b\"]
+        default: ["qwen2.5-coder:14b"]
         fetch: true
       titleConvo: true
-      titleModel: \"qwen2.5-coder:14b\"
-      modelDisplayLabel: \"Qwen 14B (local)\"
+      titleModel: "qwen2.5-coder:14b"
+      modelDisplayLabel: "Qwen 14B — Miranda"
 YAML
+
+# apply Miranda branding via .env overrides
+grep -q 'APP_TITLE' .env || echo 'APP_TITLE=Miranda' >> .env
+grep -q 'CUSTOM_FOOTER' .env || echo 'CUSTOM_FOOTER=Miranda — Berylize Labs' >> .env
+grep -q 'HELP_AND_FAQ_URL' .env || echo 'HELP_AND_FAQ_URL=' >> .env
 
 # start if not already running
 if ! podman ps 2>/dev/null | grep -q librechat; then
