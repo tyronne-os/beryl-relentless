@@ -11,6 +11,7 @@ VENV=$BASE/venv-fh
 PORT="${RENDER_PORT:-9523}"
 FA_WHL="https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.0.post2/flash_attn-2.8.0.post2+cu12torch2.7cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
 
+export PIP_CACHE_DIR=/opt/beryl/pipcache; mkdir -p "$PIP_CACHE_DIR"
 nvidia-smi >/dev/null 2>&1 || { log "ERROR: no NVIDIA driver on node"; exit 1; }
 log "GPU: $(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader)"
 python3 --version | grep -q "3.10" || log "WARN: system python is not 3.10 ($(python3 --version)); FlashHead targets 3.10"
@@ -32,9 +33,19 @@ if [[ ! -f "$VENV/.ready" ]]; then
     rm -rf "$VENV"; python3 -m venv "$VENV"
     "$VENV/bin/pip" install -q --upgrade pip wheel
     "$VENV/bin/pip" install -q torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128
-    "$VENV/bin/pip" install -q -r "$FH/requirements.txt"
+    # FlashHead pins nvidia-nccl-cu12==2.27.3 but torch 2.7.1+cu128 needs 2.26.x -> ResolutionImpossible.
+    # Drop the nccl pin (torch brings its own), drop gradio/flask (demo UIs, not needed), pin torch via constraints.
+    printf 'torch==2.7.1\ntorchvision==0.22.1\n' > "$VENV/constraints.txt"
+    grep -viE '^(nvidia-nccl|gradio|flask)' "$FH/requirements.txt" > "$VENV/req.txt"
+    "$VENV/bin/pip" install -q -r "$VENV/req.txt" -c "$VENV/constraints.txt" || {
+        log "WARN: resolver failed; retrying with --no-deps (smoke test below catches missing modules)"
+        "$VENV/bin/pip" install -q --no-deps -r "$VENV/req.txt"
+    }
     "$VENV/bin/pip" install -q "$FA_WHL" || log "WARN: flash_attn wheel failed to install"
     "$VENV/bin/pip" install -q fastapi uvicorn pillow httpx "huggingface_hub[cli]"
+    log "smoke test: importing flash_head.inference..."
+    PYTHONPATH="$FH" "$VENV/bin/python" -c "import torch, flash_head.inference as m; print('import ok, cuda =', torch.cuda.is_available())" \
+        || { log "ERROR: flash_head import failed (see message above); venv NOT marked ready"; exit 1; }
     touch "$VENV/.ready"
 fi
 
