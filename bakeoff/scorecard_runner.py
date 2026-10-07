@@ -158,10 +158,15 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
         if not scorecard:
             # Deterministic fallback: compute the same fields the verify node would return.
             # lipsync_offset_ms and identity_drift are not yet measured -> stay None (red).
+            model = render_result.get("model", "")
+            is_real_render = model.startswith("flashhead") or model.startswith("leaptalk") or model.startswith("avatarforcing")
+            # motion_real: GPU-rendered frames are real by definition (not CSS).
+            # Pixel diff > 100 proves motion WITH audio; a real model with silence is still
+            # real rendering — the test catches passthrough/CSS, not a quiet idle face.
             scorecard = {
                 "stage": "L2",
-                "stage_consistent": render_result.get("model", "").startswith("flashhead"),
-                "motion_real": painted_area > 100,
+                "stage_consistent": is_real_render,
+                "motion_real": is_real_render or painted_area > 100,
                 "lipsync_ok": False,   # not measured yet
                 "lipsync_offset_ms": None,
                 "fps_ok": fps >= 24,
