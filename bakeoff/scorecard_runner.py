@@ -59,7 +59,7 @@ TESTS = [
         "id": "identity_stable",
         "name": "Identity drift ≤ 0.15 over session",
         "fixture": "long_session_30s.wav",
-        "check": lambda r: r.get("identity_ok", True),
+        "check": lambda r: r.get("identity_ok") is True,
         "critical": False,
     },
     {
@@ -126,30 +126,52 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
         render_result = resp.json()
         first_frame_ms = round((time.monotonic() - t0) * 1000, 1)
 
-        # Measure FPS from render latency
         fps = render_result.get("fps", 0)
-        latency = render_result.get("latency_ms", first_frame_ms)
+        painted = render_result.get("painted", {})
+        painted_area = painted.get("changed_pixel_area", 0)
+        latency_ms = render_result.get("latency_ms", first_frame_ms)
 
-        # Get scorecard from verify node
+        # Try verify node for typed cross-check; fall back to deterministic scorecard.
         telemetry = {
             "stated_stage": "L2",
             "duplug_state": "speaking",
             "audio_energy_rms": 0.1,
             "fps_actual": fps,
-            "first_frame_latency_ms": first_frame_ms,
+            "first_frame_latency_ms": latency_ms,
         }
         metrics = {
             "fps": fps,
-            "first_frame_latency_ms": render_result.get("latency_ms", first_frame_ms),
-            "painted_pixel_area": render_result.get("painted", {}).get("changed_pixel_area", 0),
-            "frame_diff_mean": render_result.get("painted", {}).get("frame_diff_mean", 0.0),
-        }  # lipsync + identity drift are NOT measured yet -> scorecard keeps them red
-        verify_resp = await client.post(f"{verify_url}/scorecard", json={
-            "telemetry": telemetry,
-            "metrics": metrics,
-        })
-        if verify_resp.status_code == 200:
-            scorecard = verify_resp.json()
+            "first_frame_latency_ms": latency_ms,
+            "painted_pixel_area": painted_area,
+            "frame_diff_mean": painted.get("frame_diff_mean", 0.0),
+        }
+        try:
+            verify_resp = await client.post(f"{verify_url}/scorecard", json={
+                "telemetry": telemetry,
+                "metrics": metrics,
+            }, timeout=5.0)
+            if verify_resp.status_code == 200:
+                scorecard = verify_resp.json()
+        except Exception:
+            pass  # verify node offline — compute deterministic scorecard directly
+
+        if not scorecard:
+            # Deterministic fallback: compute the same fields the verify node would return.
+            # lipsync_offset_ms and identity_drift are not yet measured -> stay None (red).
+            scorecard = {
+                "stage": "L2",
+                "stage_consistent": render_result.get("model", "").startswith("flashhead"),
+                "motion_real": painted_area > 100,
+                "lipsync_ok": False,   # not measured yet
+                "lipsync_offset_ms": None,
+                "fps_ok": fps >= 24,
+                "fps": fps,
+                "first_frame_ok": latency_ms <= 500,
+                "first_frame_ms": latency_ms,
+                "identity_ok": None,   # not measured yet
+                "identity_drift": None,
+                "source": "deterministic_fallback",
+            }
 
     except Exception as exc:
         scorecard = {"error": str(exc)}
@@ -181,14 +203,15 @@ async def main(render_url: str, verify_url: str, output: str):
     # Benchmark the render node
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            bench = (await client.get(f"{render_url}/benchmark")).json()
             health = (await client.get(f"{render_url}/health")).json()
             print(f"  Model:   {health.get('model', '?')}")
             print(f"  Device:  {health.get('device', '?')}")
             gpu = health.get("gpu", {})
             if gpu:
                 print(f"  GPU:     {gpu.get('name','?')} ({gpu.get('vram_free_gb','?')} GB free)")
-            print(f"  FPS:     {bench.get('avg_fps', '?')} avg ({bench.get('avg_latency_ms', '?')} ms/frame)")
+            load_err = health.get("load_error")
+            if load_err:
+                print(f"  WARN:    load_error = {load_err}")
             print()
         except Exception as exc:
             print(f"  WARN: could not reach render node: {exc}\n")
