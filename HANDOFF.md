@@ -4,6 +4,17 @@
 
 ---
 
+## FINISH LIST (the only work left for a working L2 demo; do in this order)
+Execution rule: run these from a session that HAS the GCP key and ssh (laptop or berylize-node), never relay commands to the operator.
+1. Real speech fixture: `bakeoff/fixtures/hello_beryl.wav` (16 kHz mono, ~5 s) and `long_session_30s.wav`. Cloud container has no TTS and no HF access; record on a phone or generate on the node.
+2. `./deploy/gpu_on.sh` (predeploy gate runs first). Expect: motion PASS, fps PASS (~35), first-chunk ~689 ms FAIL (decision, not a bug).
+3. Save a real clip: have `/render` write the frames to mp4 so there is something to show (photo in -> speaking avatar out).
+4. Fix TTS/MOTION port clash in `src/server/avatar_chain.py` (both 9522).
+5. Lip-sync measurement (SyncNet-style) in VERIFY.
+6. `./deploy/gpu_off.sh` when done (VM bills while running).
+
+---
+
 ## SESSION UPDATE 2026-10-07 — L2 GPU deploy COMPLETE
 
 ### What was accomplished
