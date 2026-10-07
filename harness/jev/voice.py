@@ -1,58 +1,63 @@
 """
 JEV·VOICE — compare user prosody vs Beryl TTS prosody.
 Output: {tone, contradicts_words, stress, confidence}
+Vocabulary, thresholds, timeout, limits and question wording live in jev.yaml.
 """
 import logging
 import os
 
 import httpx
 
+from harness.jev._contract import SPEC, call_jev, choice, conf, guarded, prob, questions, score, timeout_for
+
 log = logging.getLogger("jev.voice")
 
 _URL = os.environ.get("TYPESAFE_API_URL", "https://api.typesafe.ai/v1/systemone")
 _KEY = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY", "")
-_MODEL = os.environ.get("CRANE_JEV_MODEL", "jev-latest")
-_TIMEOUT = float(os.environ.get("JEV_VOICE_TIMEOUT_S", "2.5"))
+_MODEL = os.environ.get("CRANE_JEV_MODEL", SPEC["model_default"])
+_TIMEOUT = timeout_for("voice")
 _ENABLED = os.environ.get("CRANE_JEV", "true").lower() == "true"
 
 _client = httpx.AsyncClient(timeout=_TIMEOUT)
 
-_TONES = ["calm", "warm", "excited", "tense", "sad", "flat", "urgent", "playful"]
+_TONES = SPEC["vocab"]["tones"]
+_NEUTRAL = SPEC["neutral"]["voice"]
+_T = SPEC["fallback"]["voice"]
+_REPLY_CHARS = SPEC["limits"]["voice_reply_chars"]
 
 
 def _deterministic_fallback(user_prosody: dict, beryl_prosody: dict, reply_text: str) -> dict:
-    u_pitch = user_prosody.get("pitch_hz", 150)
-    u_energy = user_prosody.get("energy_db", -20)
-    u_rate = user_prosody.get("rate_wpm", 140)
+    u_energy = user_prosody.get("energy_db", _T["default_energy_db"])
+    u_rate = user_prosody.get("rate_wpm", _T["default_rate_wpm"])
 
     tone = "calm"
-    if u_energy > -10 and u_rate > 160:
+    if u_energy > _T["excited_energy_db"] and u_rate > _T["excited_rate_wpm"]:
         tone = "excited"
-    elif u_energy < -30:
+    elif u_energy < _T["sad_energy_db"]:
         tone = "sad"
-    elif u_rate > 180:
+    elif u_rate > _T["urgent_rate_wpm"]:
         tone = "urgent"
 
-    contradicts = 0.1
-    exclamation_in_reply = "!" in reply_text
-    b_rate = beryl_prosody.get("rate_wpm", 140)
-    if exclamation_in_reply and b_rate < 120:
-        contradicts = 0.7
+    contradicts = _T["contradicts_low"]
+    b_rate = beryl_prosody.get("rate_wpm", _T["default_rate_wpm"])
+    if "!" in reply_text and b_rate < _T["contradicts_beryl_rate_wpm"]:
+        contradicts = _T["contradicts_high"]
 
+    floor = _T["stress_floor_db"]
+    stress = max(0.0, min(1.0, (u_energy - floor) / -floor))  # dBFS: floor = quiet .. 0 = loud
     return {
         "tone": tone,
         "contradicts_words": round(contradicts, 2),
-        "stress": round(min(1.0, u_energy / -10 + 0.5), 2),
-        "confidence": 0.4,
+        "stress": round(stress, 2),
+        "confidence": _T["confidence"],
         "source": "fallback",
     }
 
 
+@guarded(_NEUTRAL)
 async def check(user_prosody: dict, beryl_prosody: dict, reply_text: str) -> dict:
     """
-    user_prosody: {pitch_hz, energy_db, rate_wpm, pause_count}
-    beryl_prosody: {pitch_hz, energy_db, rate_wpm} — from TTS settings used
-    reply_text: the LLM reply text
+    user_prosody: {pitch_hz, energy_db, rate_wpm, pause_count}; beryl_prosody: {pitch_hz, energy_db, rate_wpm}
     Returns {tone, contradicts_words, stress, confidence}
     """
     if not _ENABLED or not _KEY:
@@ -61,35 +66,15 @@ async def check(user_prosody: dict, beryl_prosody: dict, reply_text: str) -> dic
     try:
         payload = {
             "model": _MODEL,
-            "state": {
-                "user_prosody": user_prosody,
-                "beryl_prosody": beryl_prosody,
-                "reply_text": reply_text[:600],
-            },
-            "questions": {
-                "tone": {
-                    "type": "choice",
-                    "question": "What is the overall vocal tone of the user's speech based on their prosody features?",
-                    "choices": {t: f"The user sounds {t}" for t in _TONES},
-                },
-                "contradicts_words": {
-                    "type": "noul",
-                    "question": "Does the user's vocal delivery (pitch, energy, rate) contradict or conflict with the literal meaning of their words?",
-                },
-                "stress": {
-                    "type": "score",
-                    "question": "How stressed or tense does the user sound based on their prosody?",
-                    "scale": ["Relaxed and unstressed", "Mildly stressed", "Clearly stressed or tense"],
-                },
-            },
+            "state": {"user_prosody": user_prosody, "beryl_prosody": beryl_prosody,
+                      "reply_text": reply_text[:_REPLY_CHARS]},
+            "questions": questions("voice"),
         }
-        resp = await _client.post(_URL, json=payload, headers={"Authorization": f"Bearer {_KEY}"})
-        resp.raise_for_status()
-        ans = resp.json().get("answers", {})
-        tone = ans.get("tone", {}).get("choice", "calm")
-        contradicts = ans.get("contradicts_words", {}).get("yes_prob", 0.1)
-        stress = ans.get("stress", {}).get("score", 1) / 2.0
-        confidence = ans.get("tone", {}).get("confidence", 0.5)
+        ans = await call_jev(_client, _URL, payload, _KEY, _TIMEOUT)
+        tone = choice(ans, "tone", _TONES, "calm")
+        contradicts = prob(ans, "contradicts_words", 0.1)
+        stress = score(ans, "stress", 0.5)
+        confidence = conf(ans, "tone", 0.5)
         return {
             "tone": tone,
             "contradicts_words": round(contradicts, 2),
@@ -98,5 +83,5 @@ async def check(user_prosody: dict, beryl_prosody: dict, reply_text: str) -> dic
             "source": "jev",
         }
     except Exception as exc:
-        log.warning("JEV·VOICE failed (%s) — using fallback", exc)
+        log.warning("JEV·VOICE failed (%r) — using fallback", exc)
         return _deterministic_fallback(user_prosody, beryl_prosody, reply_text)

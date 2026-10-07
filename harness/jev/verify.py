@@ -4,67 +4,72 @@ Output: {stated_stage, telemetry_stage, consistent, is_motion_visible,
          occluding_layer, duplug_state, audio_energy_pattern, agrees}
 
 This is the receipts node. It catches CSS-only SIM masquerading as real motion.
-Deterministic metrics are PRIMARY — JEV is a typed cross-check on top.
+Deterministic metrics are PRIMARY; JEV is a typed cross-check that can only make a result STRICTER.
+Fails CLOSED: if VERIFY itself breaks it reports not-consistent / no-motion, never a green receipt.
+Vocabulary, thresholds, timeout and question wording live in jev.yaml.
 """
 import logging
 import os
 
 import httpx
 
+from harness.jev._contract import SPEC, call_jev, conf, guarded, prob, questions, timeout_for
 from harness.nodes.verify.lipsync import lipsync_ok
 
 log = logging.getLogger("jev.verify")
 
 _URL = os.environ.get("TYPESAFE_API_URL", "https://api.typesafe.ai/v1/systemone")
 _KEY = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY", "")
-_MODEL = os.environ.get("CRANE_JEV_MODEL", "jev-latest")
-_TIMEOUT = float(os.environ.get("JEV_VERIFY_TIMEOUT_S", "2.5"))
+_MODEL = os.environ.get("CRANE_JEV_MODEL", SPEC["model_default"])
+_TIMEOUT = timeout_for("verify")
 _ENABLED = os.environ.get("CRANE_JEV", "true").lower() == "true"
 
 _client = httpx.AsyncClient(timeout=_TIMEOUT)
 
-_STAGES = {"L0": "Idle presence only (client cached loop)", "L1": "Live CPU+API chain", "L2": "GPU cinematic render"}
+_STAGES = SPEC["vocab"]["stages"]
+_NEUTRAL = SPEC["neutral"]["verify"]
+_T = SPEC["fallback"]["verify"]
+_OVERRIDE_CONF = SPEC["verify_override_confidence"]
 
 
 def _deterministic_fallback(telemetry: dict, painted_pixels: dict) -> dict:
     stated = telemetry.get("stated_stage", "L0")
+    stage_known = isinstance(stated, str) and stated in _STAGES
+    if not stage_known:
+        stated = "L0"
     motion_pixels = painted_pixels.get("changed_pixel_area", 0)
-    has_motion = motion_pixels > 100
+    has_motion = motion_pixels > _T["motion_pixels_min"]
     duplug_state = telemetry.get("duplug_state", "unknown")
-    audio_energy = telemetry.get("audio_energy_rms", 0.0)
+    duplug_state = duplug_state if isinstance(duplug_state, str) else "unknown"
+    audio_active = telemetry.get("audio_energy_rms", 0.0) > _T["audio_active_rms"]
 
-    # If stated L1/L2 but zero pixel change, it's still CSS SIM
-    telemetry_stage = stated
-    consistent = True
+    # Stated L1/L2 with no painted-pixel change is still CSS SIM.
+    telemetry_stage, consistent = stated, stage_known
     if stated in ("L1", "L2") and not has_motion:
-        telemetry_stage = "L0"
-        consistent = False
+        telemetry_stage, consistent = "L0", False
 
-    agrees = not (audio_energy > 0.05 and duplug_state == "silent")
-
+    occluding = painted_pixels.get("occluding_layer", None)
     return {
         "stated_stage": stated,
         "telemetry_stage": telemetry_stage,
         "consistent": consistent,
         "is_motion_visible": has_motion,
-        "occluding_layer": painted_pixels.get("occluding_layer", None),
+        "occluding_layer": occluding if isinstance(occluding, (str, type(None))) else None,
         "duplug_state": duplug_state,
-        "audio_energy_pattern": "active" if audio_energy > 0.05 else "silent",
-        "agrees": agrees,
+        "audio_energy_pattern": "active" if audio_active else "silent",
+        "agrees": not (audio_active and duplug_state == "silent"),
         "motion_pixels": motion_pixels,
         "source": "fallback",
     }
 
 
+@guarded(_NEUTRAL)
 async def check(telemetry: dict, painted_pixels: dict) -> dict:
     """
-    telemetry: {stated_stage, duplug_state, audio_energy_rms, fps_actual,
-                lipsync_offset_ms, first_frame_latency_ms}
+    telemetry: {stated_stage, duplug_state, audio_energy_rms, fps_actual, lipsync_offset_ms, first_frame_latency_ms}
     painted_pixels: {changed_pixel_area, occluding_layer, frame_diff_mean}
-    Returns the full verify scorecard.
-    Always returns deterministic values; JEV adds typed cross-check if available.
+    Deterministic values always; JEV can only tighten them.
     """
-    # Always run deterministic check first
     base = _deterministic_fallback(telemetry, painted_pixels)
 
     if not _ENABLED or not _KEY:
@@ -73,48 +78,20 @@ async def check(telemetry: dict, painted_pixels: dict) -> dict:
     try:
         payload = {
             "model": _MODEL,
-            "state": {
-                "telemetry": telemetry,
-                "painted_pixels": painted_pixels,
-                "deterministic_result": base,
-            },
-            "questions": {
-                "consistent": {
-                    "type": "noul",
-                    "question": "Does the telemetry data confirm that the stated rendering stage is actually active and producing real motion?",
-                },
-                "is_motion_visible": {
-                    "type": "noul",
-                    "question": "Do the painted_pixels metrics confirm that real pixel-level motion is occurring (not CSS transform only)?",
-                },
-                "agrees": {
-                    "type": "noul",
-                    "question": "Does the audio energy pattern agree with the duplug listener state? (Active audio should not show 'silent' duplug state)",
-                },
-            },
+            "state": {"telemetry": telemetry, "painted_pixels": painted_pixels, "deterministic_result": base},
+            "questions": questions("verify"),
         }
-        resp = await _client.post(_URL, json=payload, headers={"Authorization": f"Bearer {_KEY}"})
-        resp.raise_for_status()
-        ans = resp.json().get("answers", {})
-
-        # JEV overrides deterministic only if confidence is high
-        jev_consistent = ans.get("consistent", {}).get("yes_prob", 0.5)
-        jev_motion = ans.get("is_motion_visible", {}).get("yes_prob", 0.5)
-        jev_agrees = ans.get("agrees", {}).get("yes_prob", 0.5)
-
-        if ans.get("consistent", {}).get("confidence", 0) > 0.7:
-            base["consistent"] = jev_consistent > 0.5
-        if ans.get("is_motion_visible", {}).get("confidence", 0) > 0.7:
-            base["is_motion_visible"] = jev_motion > 0.5
-        if ans.get("agrees", {}).get("confidence", 0) > 0.7:
-            base["agrees"] = jev_agrees > 0.5
-
+        ans = await call_jev(_client, _URL, payload, _KEY, _TIMEOUT)
+        # Parse every vote before applying any, so one bad slot changes nothing.
+        votes = {k: (conf(ans, k, 0.0), prob(ans, k, 0.5)) for k in ("consistent", "is_motion_visible", "agrees")}
+        for k, (c, p) in votes.items():
+            if c > _OVERRIDE_CONF and p <= 0.5:
+                base[k] = False
         base["source"] = "jev+deterministic"
         return base
-
     except Exception as exc:
-        log.warning("JEV·VERIFY failed (%s) — deterministic result stands", exc)
-        return base
+        log.warning("JEV·VERIFY failed (%r) — deterministic result stands", exc)
+        return _deterministic_fallback(telemetry, painted_pixels)
 
 
 def scorecard(verify_result: dict, metrics: dict) -> dict:

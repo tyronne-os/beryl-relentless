@@ -1,0 +1,187 @@
+# JEV contract — single source of truth for every JEV placement (face, voice, persona, director, verify).
+# Data only: loaded with yaml.safe_load, no expressions. Branching lives in Python (build rule 8).
+# Modules read this at import; tests/test_jev_standards.py checks the code against it.
+# Change a vocabulary, threshold, limit or question here, never as a literal in a module.
+version: 1
+
+# Question types sent to System One. choice/score are confirmed in use; "noul" is unverified
+# against docs.typesafe.ai (open item) — change it HERE if the docs name it differently.
+question_types: [choice, score, noul]
+
+model_default: jev-latest        # env CRANE_JEV_MODEL overrides
+verify_override_confidence: 0.7  # a JEV vote can only tighten VERIFY above this confidence
+
+timeout_s:                       # per call; hard deadline is timeout + 0.5 s (env JEV_<NAME>_TIMEOUT_S overrides)
+  face: 2.5
+  voice: 2.5
+  persona: 2.5
+  director: 2.0
+  verify: 2.5
+
+limits:                          # data minimisation: most that leaves the box per call
+  voice_reply_chars: 600
+  persona_reply_chars: 800
+  persona_history_turns: 6
+  director_reply_chars: 400
+
+vocab:
+  emotions: [neutral, happy, sad, angry, surprised, disgusted, fearful, confused, concerned]
+  tones: [calm, warm, excited, tense, sad, flat, urgent, playful]
+  stages:
+    L0: Idle presence only (client cached loop)
+    L1: Live CPU+API chain
+    L2: GPU cinematic render
+  actions:
+    continue: Deliver the reply as-is — tone and character are appropriate
+    soften: Deliver the reply but with a gentler, more careful tone
+    yield: Withhold the reply — the avatar should re-think or stay silent
+  gaze:
+    hold: Steady eye contact — engaged and present
+    away_think: Brief glance up/aside — forming a thought
+    down_sincere: Brief downward look — sincere or sensitive moment
+    aside_recall: Glance aside — recalling a fact or memory
+    soft_blink: Slow blink — warmth or acceptance
+  micro:
+    none: No micro-expression
+    brow_flash: Quick eyebrow raise — interest or mild surprise
+    brow_knit: Brief brow furrow — concentration or concern
+    smile_flick: Quick corner-of-mouth smile
+    lip_press: Brief lip press — restraint or careful consideration
+    nostril_flare: Slight nostril flare — heightened attention
+
+# Result returned if a placement fails even on its fallback path.
+# Experience gates fail OPEN (never mute the avatar); VERIFY fails CLOSED (never a green receipt).
+neutral:
+  face: {user_emotion: neutral, beryl_emotion: neutral, match: 0.5, confidence: 0.0}
+  voice: {tone: calm, contradicts_words: 0.0, stress: 0.0, confidence: 0.0}
+  persona: {in_character: true, tone_ok: true, action: continue, confidence: 0.0}
+  director: {gaze: hold, blink_rate: 0.25, nod: 0.2, micro_expression: none, intensity: 0.5}
+  verify:
+    stated_stage: L0
+    telemetry_stage: L0
+    consistent: false
+    is_motion_visible: false
+    occluding_layer: null
+    duplug_state: unknown
+    audio_energy_pattern: silent
+    agrees: false
+    motion_pixels: 0
+
+# Deterministic fallback parameters (used when JEV is off, down, slow or returns something invalid).
+fallback:
+  face:
+    happy_au12: 0.5
+    happy_au6: 0.4
+    angry_au4: 0.6
+    angry_au7: 0.5
+    sad_au1: 0.5
+    sad_au4: 0.4
+    surprised_au1: 0.5
+    surprised_au2: 0.5
+    beryl_smile: 0.4
+    beryl_brow: 0.5
+    match_same: 1.0
+    match_diff: 0.3
+    confidence: 0.4
+  voice:
+    default_energy_db: -20
+    default_rate_wpm: 140
+    excited_energy_db: -10
+    excited_rate_wpm: 160
+    sad_energy_db: -30
+    urgent_rate_wpm: 180
+    contradicts_low: 0.1
+    contradicts_high: 0.7
+    contradicts_beryl_rate_wpm: 120
+    stress_floor_db: -45          # stress = (energy_db - floor) / -floor, clamped 0..1
+    confidence: 0.4
+  persona:
+    soften_match_below: 0.3
+    soften_stress_above: 0.7
+    yield_contradicts_above: 0.8
+    confidence: 0.4
+  director:
+    intensity_continue: 0.6
+    intensity_other: 0.3
+    blink_soften: 0.4
+    blink_default: 0.25
+    nod_high: 0.7
+    nod_low: 0.2
+    nod_emotions: [curious, warm]
+    gaze_by_emotion: {curious: away_think, excited: hold, concerned: down_sincere, serious: aside_recall, neutral: hold, warm: soft_blink, happy: hold}
+    micro_by_emotion: {curious: brow_flash, concerned: brow_knit, happy: smile_flick, serious: lip_press, neutral: none}
+  verify:
+    motion_pixels_min: 100
+    audio_active_rms: 0.05
+
+# What each placement asks JEV. `vocab` names an entry above; plain lists get "<choice_prefix> <value>" descriptions.
+questions:
+  face:
+    user_emotion:
+      type: choice
+      vocab: emotions
+      choice_prefix: The user appears
+      question: What emotion do the user's facial action units express?
+    beryl_emotion:
+      type: choice
+      vocab: emotions
+      choice_prefix: Beryl appears
+      question: What emotion do Beryl's current rendered blendshapes express?
+    match:
+      type: score
+      question: How well does Beryl's facial expression match what the user's emotion calls for?
+      scale: ["Beryl's expression is mismatched or inappropriate", Partially aligned, "Well matched to the user's emotional state"]
+  voice:
+    tone:
+      type: choice
+      vocab: tones
+      choice_prefix: The user sounds
+      question: What is the overall vocal tone of the user's speech based on their prosody features?
+    contradicts_words:
+      type: noul
+      question: Does the user's vocal delivery (pitch, energy, rate) contradict or conflict with the literal meaning of their words?
+    stress:
+      type: score
+      question: How stressed or tense does the user sound based on their prosody?
+      scale: [Relaxed and unstressed, Mildly stressed, Clearly stressed or tense]
+  persona:
+    in_character:
+      type: noul
+      question: Is the proposed_reply consistent with the persona_card's described personality and role?
+    tone_ok:
+      type: noul
+      question: Given the user's current emotional state (face_check, voice_check), is the proposed_reply's tone appropriate?
+    action:
+      type: choice
+      vocab: actions
+      question: What should the avatar do with the proposed_reply?
+  director:
+    gaze:
+      type: choice
+      vocab: gaze
+      question: Where should Beryl's eyes go during this reply to feel most natural and emotionally resonant?
+    blink_rate:
+      type: score
+      question: How frequently should Beryl blink during this reply?
+      scale: [Slow infrequent blinks (calm focused), Normal blink rate, Slightly elevated blink rate (mild stress or excitement)]
+    nod:
+      type: noul
+      question: Should Beryl give a small head nod while delivering this reply to emphasise a point?
+    micro_expression:
+      type: choice
+      vocab: micro
+      question: Which brief involuntary facial flash would feel authentic at the start of this reply?
+    intensity:
+      type: score
+      question: How emotionally expressive and physically animated should Beryl be during this reply?
+      scale: [Subdued and still, Moderately expressive, Visibly animated and engaged]
+  verify:
+    consistent:
+      type: noul
+      question: Does the telemetry data confirm that the stated rendering stage is actually active and producing real motion?
+    is_motion_visible:
+      type: noul
+      question: Do the painted_pixels metrics confirm that real pixel-level motion is occurring (not CSS transform only)?
+    agrees:
+      type: noul
+      question: Does the audio energy pattern agree with the duplug listener state? (Active audio should not show 'silent' duplug state)

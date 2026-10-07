@@ -1,111 +1,74 @@
 """
 JEV·PERSONA — fuse Face+Voice+history+persona card → gates the LLM reply.
 Output: {in_character, tone_ok, action: continue|soften|yield}
-This is the GATE: if action == "yield", the LLM reply is withheld and
-the avatar re-prompts or stays silent. action == "soften" adds a style hint.
+This is the GATE: "yield" withholds the LLM reply (re-prompt or stay silent); "soften" adds a style hint.
+Fails OPEN: if anything breaks the result is `continue`, so a JEV problem never mutes the avatar.
+Vocabulary, thresholds, timeout, limits and question wording live in jev.yaml.
 """
 import logging
 import os
 
 import httpx
 
+from harness.jev._contract import SPEC, call_jev, choice, conf, guarded, prob, questions, timeout_for
+
 log = logging.getLogger("jev.persona")
 
 _URL = os.environ.get("TYPESAFE_API_URL", "https://api.typesafe.ai/v1/systemone")
 _KEY = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("JEV_API_KEY", "")
-_MODEL = os.environ.get("CRANE_JEV_MODEL", "jev-latest")
-_TIMEOUT = float(os.environ.get("JEV_PERSONA_TIMEOUT_S", "2.5"))
+_MODEL = os.environ.get("CRANE_JEV_MODEL", SPEC["model_default"])
+_TIMEOUT = timeout_for("persona")
 _ENABLED = os.environ.get("CRANE_JEV", "true").lower() == "true"
 
 _client = httpx.AsyncClient(timeout=_TIMEOUT)
 
-_ACTIONS = {
-    "continue": "Deliver the reply as-is — tone and character are appropriate",
-    "soften": "Deliver the reply but with a gentler, more careful tone",
-    "yield": "Withhold the reply — the avatar should re-think or stay silent",
-}
+_ACTIONS = SPEC["vocab"]["actions"]
+_NEUTRAL = SPEC["neutral"]["persona"]
+_T = SPEC["fallback"]["persona"]
+_REPLY_CHARS = SPEC["limits"]["persona_reply_chars"]
+_HISTORY_TURNS = SPEC["limits"]["persona_history_turns"]
 
 
 def _deterministic_fallback(face: dict, voice: dict, history_len: int, persona_card: dict) -> dict:
-    action = "continue"
-    tone_ok = True
-    in_character = True
+    action, tone_ok, in_character = "continue", True, True
 
-    # If face and voice both show high stress, soften
-    face_match = face.get("match", 1.0)
-    voice_stress = voice.get("stress", 0.0)
-    if face_match < 0.3 and voice_stress > 0.7:
-        action = "soften"
-        tone_ok = False
+    if face.get("match", 1.0) < _T["soften_match_below"] and voice.get("stress", 0.0) > _T["soften_stress_above"]:
+        action, tone_ok = "soften", False
+    if voice.get("contradicts_words", 0) > _T["yield_contradicts_above"]:
+        action, in_character = "yield", False
 
-    # If voice contradicts words, yield
-    if voice.get("contradicts_words", 0) > 0.8:
-        action = "yield"
-        in_character = False
-
-    return {
-        "in_character": in_character,
-        "tone_ok": tone_ok,
-        "action": action,
-        "confidence": 0.4,
-        "source": "fallback",
-    }
+    return {"in_character": in_character, "tone_ok": tone_ok, "action": action,
+            "confidence": _T["confidence"], "source": "fallback"}
 
 
-async def check(face: dict, voice: dict, history: list[dict],
-                persona_card: dict, reply: str) -> dict:
+@guarded(_NEUTRAL)
+async def check(face: dict, voice: dict, history: list[dict], persona_card: dict, reply: str) -> dict:
     """
-    face: output of JEV·FACE
-    voice: output of JEV·VOICE
-    history: last N turns
-    persona_card: {name, role, personality_traits, forbidden_topics}
-    reply: the LLM-generated reply text to evaluate
-    Returns {in_character, tone_ok, action: continue|soften|yield}
+    face/voice: outputs of JEV·FACE / JEV·VOICE; history: last N turns;
+    persona_card: {name, role, personality_traits, forbidden_topics}; reply: the LLM reply to evaluate.
     """
     if not _ENABLED or not _KEY:
         return _deterministic_fallback(face, voice, len(history), persona_card)
 
-    recent_history = history[-6:] if len(history) > 6 else history
     try:
         payload = {
             "model": _MODEL,
             "state": {
                 "face_check": face,
                 "voice_check": voice,
-                "recent_history": recent_history,
+                "recent_history": history[-_HISTORY_TURNS:],
                 "persona_card": persona_card,
-                "proposed_reply": reply[:800],
+                "proposed_reply": reply[:_REPLY_CHARS],
             },
-            "questions": {
-                "in_character": {
-                    "type": "noul",
-                    "question": "Is the proposed_reply consistent with the persona_card's described personality and role?",
-                },
-                "tone_ok": {
-                    "type": "noul",
-                    "question": "Given the user's current emotional state (face_check, voice_check), is the proposed_reply's tone appropriate?",
-                },
-                "action": {
-                    "type": "choice",
-                    "question": "What should the avatar do with the proposed_reply?",
-                    "choices": _ACTIONS,
-                },
-            },
+            "questions": questions("persona"),
         }
-        resp = await _client.post(_URL, json=payload, headers={"Authorization": f"Bearer {_KEY}"})
-        resp.raise_for_status()
-        ans = resp.json().get("answers", {})
-        in_char = ans.get("in_character", {}).get("yes_prob", 0.8) > 0.5
-        tone = ans.get("tone_ok", {}).get("yes_prob", 0.8) > 0.5
-        action = ans.get("action", {}).get("choice", "continue")
-        confidence = ans.get("action", {}).get("confidence", 0.5)
-        return {
-            "in_character": in_char,
-            "tone_ok": tone,
-            "action": action,
-            "confidence": round(confidence, 2),
-            "source": "jev",
-        }
+        ans = await call_jev(_client, _URL, payload, _KEY, _TIMEOUT)
+        in_char = prob(ans, "in_character", 0.8) > 0.5
+        tone = prob(ans, "tone_ok", 0.8) > 0.5
+        action = choice(ans, "action", _ACTIONS, "continue")
+        confidence = conf(ans, "action", 0.5)
+        return {"in_character": in_char, "tone_ok": tone, "action": action,
+                "confidence": round(confidence, 2), "source": "jev"}
     except Exception as exc:
-        log.warning("JEV·PERSONA failed (%s) — using fallback", exc)
+        log.warning("JEV·PERSONA failed (%r) — using fallback", exc)
         return _deterministic_fallback(face, voice, len(history), persona_card)

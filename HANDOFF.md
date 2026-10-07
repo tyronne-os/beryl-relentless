@@ -13,6 +13,9 @@ Execution rule: run these from a session that HAS the GCP key and ssh (laptop or
 5. ~~Lip-sync measurement~~ **BUILT, awaiting first real-clip run (session 4)** — `harness/nodes/verify/lipsync.py` (numpy+ffmpeg, no model weights): mouth-region motion energy vs speech-envelope rate from the rendered mp4's real timestamps, cross-correlated over ±400 ms, sub-frame refined. Validated on synthetic clips with known offsets (±3 ms, incl. container mux delay; refuses unrelated/silent). `scorecard_runner` now does a full-length `save_mp4` render for `lipsync_range` and measures it. NOT yet run on a real avatar clip: threshold `MIN_PEAK_R=0.30` was set from synthetic data, so calibrate on `clip_warm.mp4` first: `python3 -m harness.nodes.verify.lipsync bakeoff/results/clip_warm.mp4`. Acceptance rule is now one place: `lipsync.lipsync_ok` = |offset| ≤ 133 ms (the old literal `40 <= x <= 133` rejected near-perfect sync).
 6. `./deploy/gpu_off.sh` when done (VM bills while running).
 
+## JEV (design + standards)
+Design: `docs/JEV-DESIGN.md`. Spec: `harness/jev/jev.yaml` (vocab, thresholds, limits, questions; code reads it). Standards: `python3 tests/test_jev_standards.py` (S1-S13, offline; also a predeploy check). Never run against the real API yet; `noul` type and answer field names unverified; VOICE is fed placeholder prosody in `avatar_chain.py`.
+
 ## LOCAL CODING AGENT (free, no Claude tokens)
 Berylize 14B runs on the GPU node itself — use it for routine edits/searches to save Claude tokens for hard reasoning.
 ```bash

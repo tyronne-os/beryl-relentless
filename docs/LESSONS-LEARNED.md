@@ -32,6 +32,9 @@ Every failure hit so far, in order. Where the exact message was not captured in 
 - Three-strikes rule: on the 3rd distinct failure of a node, stop patching and vendor a known-good reference (Pipecat, JoyVASA, FLOAT, LivePortrait, Kokoro, faster-whisper, or the HF/NVIDIA GitHub original).
 - Verify repo IDs and APIs against the real source before coding. Open the README, list the files, read the requirements.
 - JEV (TypeSafe) is never in a repair path; every JEV call has a deterministic local fallback.
+- A JEV answer is untrusted input: validate type, range and choice membership, bound it with a hard deadline, and let it only tighten VERIFY, never loosen it (L19; standards S1-S13 in `docs/JEV-DESIGN.md`).
+- A metric named after a thing must measure that thing: the old "lip-sync" subtracted two timestamps (really first-frame latency). Lip-sync is now measured from the rendered mp4 (L18).
+- Vocabularies, thresholds, limits and question wording live in YAML (`harness/jev/jev.yaml`), not as literals repeated across modules; tests check code against the YAML.
 - Every node ships with a smoke test first.
 - Secrets never committed; run a secret scan before every push.
 
