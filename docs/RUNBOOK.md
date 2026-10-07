@@ -146,7 +146,30 @@ Per session-hour, from CLAUDE.md (unit prices are assumptions, not billing data)
 
 `gpu_off.sh` stops the VM, which stops GPU/CPU billing; persistent disk storage continues to bill while stopped (standard GCP behaviour; amount unverified). `--keep-vm` keeps billing. Real L4 spot price from the GCP billing catalog is still an open item. Always run `gpu_off.sh` when finished.
 
-## (h) Reading the bake-off scorecard
+## (h) Claude session skills — what actually helped
+
+Two skills were added during the session that cracked the "endless error loops" problem. Here is an honest account of what each did.
+
+### Hugging Face MCP connector (not a Claude Code skill — a session connector)
+
+**Verdict: directly prevented a silent failure.** During research for the HF SDK upgrade, the connector was used to read the real `huggingface_hub` 2.1.1 CLI reference. That reading caught a real gotcha: in 2.x, `--include "Pattern_A/*" "Pattern_B/*"` treats the second argument as a filename, **not** an additional pattern. The correct form is `--include "Pattern_A/*" --include "Pattern_B/*"` (flag repeated per pattern). Without catching this, the weights download would have silently fetched only `Model_Lite/*` and written `.fh_ready`, and the render service would have failed at startup with a missing VAE file — after a 30-minute setup run. The connector was also used to verify the exact HF repo layout for `Soul-AILab/SoulX-FlashHead-1_3B` (Model_Lite 6.1 GB, VAE_LTX 1.7 GB, VAE_Wan 0.5 GB) and the `facebook/wav2vec2-base-960h` download patterns.
+
+**When to use it:** Any time a new HF repo, model weights, or HF CLI command is added to a deploy script — verify the repo layout and CLI reference before writing the command.
+
+### One-Shot Agentic Feature Generation plugin
+
+**Verdict: not used in this session yet.** The plugin was added after the primary setup work was underway. Its value is for future bakeoff automation: the scorecard runner (`bakeoff/scorecard_runner.py`) calls `/render` and measures real frame metrics. One-Shot's code-execution capability could run a bakeoff slot end-to-end — including fixture prep, tunnel health check, and scorecard parse — without manual steps. The right time to wire it in is after the local bakeoff runs cleanly (i.e., after `pip3 install httpx pillow` and the next `gpu_on.sh --no-bakeoff` run).
+
+**When to use it:** Step 8 onwards — automated bakeoff runs comparing FlashHead vs LeapTalk vs AvatarForcing.
+
+### Summary table
+
+| Tool | Session impact | When it matters |
+|---|---|---|
+| HF MCP connector | Caught `--include` multi-pattern syntax bug; verified weights repo layout | Any new `hf download` command in deploy scripts |
+| One-Shot plugin | Not yet exercised; agentic code-exec for bakeoff automation | Step 8+, automated render bakeoff |
+
+## (i) Reading the bake-off scorecard
 
 Output: `bakeoff/results/<timestamp>.json` (gitignored). Console shows per test PASS / FAIL / `FAIL (critical)`. Top-level fields: `all_green`, `critical_failures`, and `tests[]` each with `id`, `passed`, `critical`, `render_model`, `render_device`, `scorecard`, `first_frame_ms`. Exit code 0 only if no critical test fails.
 
