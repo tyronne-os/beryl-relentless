@@ -7,9 +7,9 @@
 ## FINISH LIST (the only work left for a working L2 demo; do in this order)
 Execution rule: run these from a session that HAS the GCP key and ssh (laptop or berylize-node), never relay commands to the operator.
 1. ~~Fix TTS/MOTION port clash~~ **DONE** — `avatar_chain.py` fixed, Kokoro now on port 8012.
-2. Real speech fixtures — run on the node: `sudo apt install -y espeak-ng sox && bash bakeoff/make_fixtures.sh`
-3. `./deploy/gpu_on.sh` (predeploy gate runs first). Expect: motion PASS, fps PASS (~35), first-chunk ~689 ms FAIL (decision, not a bug).
-4. Save a real clip: have `/render` write the frames to mp4 (photo in → speaking avatar out).
+2. ~~Real speech fixtures~~ **DONE (session 3)** — generated on the node (laptop has no espeak/sudo) and copied back to `bakeoff/fixtures/` (gitignored). `make_fixtures.sh` now also writes `silence_5s.wav`. To regenerate from the laptop: scp the script to the node, run it there, scp `*.wav` back.
+3. ~~gpu_on + clean scorecard~~ **DONE (session 3)** — scorecard runner now does an untimed warm-up render first (cold start after service restart is ~60 s and was timing out test #1; lesson 17). Clean card, real speech: motion PASS (silence 324 px vs speech 1.4–2.7k px changed), fps 35 PASS, first-chunk ~680 ms FAIL (budget decision), lipsync + identity unmeasured (red by design).
+4. ~~Save a real clip~~ **DONE (session 3)** — `POST /render {..., "save_mp4": true}` renders the full audio, muxes H.264+AAC to `/opt/beryl/renders/<id>.mp4` (last 50 kept), returns `video_url`; `GET /video/{id}` serves it. Client: `.venv/bin/python bakeoff/make_clip.py [--photo P] [--audio A]` → `bakeoff/results/clip_*.mp4`. Measured warm: 5.76 s clip in 8.7 s wall (35 fps render + 1.6 s encode), 512x512 25 fps. Not yet wired into `src/server` / Studio upload (front end is final; needs a backend proxy route only).
 5. Lip-sync measurement (SyncNet-style) in VERIFY.
 6. `./deploy/gpu_off.sh` when done (VM bills while running).
 

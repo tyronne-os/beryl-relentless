@@ -17,3 +17,4 @@ bakeoff/output/
 bakeoff/fixtures/reference.*
 bakeoff/fixtures/*.wav
 bakeoff/results/*.json
+bakeoff/results/*.mp4
