@@ -14,11 +14,13 @@ import time
 
 import httpx
 
+from harness.nodes.tts.voices import FEMALE_VOICES, BY_ID, DEFAULT_VOICE
+
 log = logging.getLogger("tts")
 
 KOKORO_URL = os.environ.get("KOKORO_URL", "http://localhost:8012")
 SPEACHES_URL = os.environ.get("SPEACHES_URL", "http://localhost:8013")
-VOICE = os.environ.get("TTS_VOICE", "af_bella")
+VOICE = os.environ.get("TTS_VOICE", DEFAULT_VOICE)
 TTS_TIMEOUT = float(os.environ.get("TTS_TIMEOUT_S", "4.0"))
 
 _client = httpx.AsyncClient(timeout=TTS_TIMEOUT)
@@ -86,3 +88,28 @@ async def health() -> dict:
         except Exception:
             results[label] = "down"
     return results
+
+
+def list_voices() -> list[dict]:
+    """Return all female voice metadata (no I/O)."""
+    return FEMALE_VOICES
+
+
+async def preview(voice_id: str, text: str | None = None) -> bytes:
+    """
+    Render a short PCM preview for the given voice_id.
+    Returns raw PCM bytes (24 kHz mono 16-bit).
+    Raises ValueError for unknown voice, httpx.HTTPError on TTS failure.
+    """
+    meta = BY_ID.get(voice_id)
+    if not meta:
+        raise ValueError(f"Unknown voice: {voice_id!r}")
+
+    sample = text or meta["sample_text"]
+    resp = await _client.post(
+        f"{KOKORO_URL}/v1/audio/speech",
+        json={"model": "kokoro", "input": sample, "voice": voice_id,
+              "response_format": "pcm", "speed": 1.0},
+    )
+    resp.raise_for_status()
+    return resp.content
