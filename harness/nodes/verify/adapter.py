@@ -21,11 +21,6 @@ _metrics_buffer: list[dict] = []
 _BUFFER_MAX = 60
 
 
-def measure_lipsync_offset(audio_timestamp_ms: float, first_video_timestamp_ms: float) -> float:
-    """Positive = video late relative to audio."""
-    return round(first_video_timestamp_ms - audio_timestamp_ms, 1)
-
-
 def measure_painted_pixels(prev_frame_data: list[int], curr_frame_data: list[int]) -> dict:
     """
     Compare sequential frames to detect real pixel-level motion.
@@ -120,12 +115,18 @@ async def scorecard_endpoint(body: dict):
 
 @app.post("/measure/lipsync")
 async def measure_lipsync(body: dict):
-    """body: {audio_ts_ms, video_ts_ms}"""
-    offset = measure_lipsync_offset(
-        body.get("audio_ts_ms", 0),
-        body.get("video_ts_ms", 0),
-    )
-    return {"lipsync_offset_ms": offset, "ok": 40 <= offset <= 133}
+    """body: {video_b64} (an mp4 with audio). Measures real mouth/audio offset from the clip."""
+    import base64
+    import tempfile
+    from harness.nodes.verify import lipsync
+    try:
+        data = base64.b64decode(body.get("video_b64", ""), validate=True)
+    except Exception:
+        return {"offset_ms": None, "ok": False, "reason": "video_b64 missing or not valid base64"}
+    with tempfile.NamedTemporaryFile(suffix=".mp4") as f:
+        f.write(data)
+        f.flush()
+        return await asyncio.to_thread(lipsync.measure_file, f.name)
 
 
 @app.post("/measure/pixels")

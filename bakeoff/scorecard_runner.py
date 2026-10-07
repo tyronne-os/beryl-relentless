@@ -21,6 +21,9 @@ from pathlib import Path
 
 import httpx
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from harness.nodes.verify import lipsync  # noqa: E402
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 RESULTS_DIR = Path(__file__).parent / "results"
 
@@ -43,8 +46,9 @@ TESTS = [
     },
     {
         "id": "lipsync_range",
-        "name": "Lip-sync within 40–133 ms offset",
+        "name": "Lip-sync within ±133 ms (measured on the rendered mp4)",
         "fixture": "hello_beryl.wav",
+        "measure_lipsync": True,
         "check": lambda r: r.get("lipsync_ok", False),
         "critical": True,
     },
@@ -100,6 +104,26 @@ def load_reference_photo() -> str:
 
 # ── Run a single test ─────────────────────────────────────────────────────
 
+async def measure_clip_lipsync(client: httpx.AsyncClient, render_url: str, test_id: str,
+                               photo_b64: str, audio_b64: str) -> dict:
+    """Full-length render with save_mp4, download the clip, measure real mouth/audio offset."""
+    r = await client.post(f"{render_url}/render", json={
+        "photo_b64": photo_b64, "audio_b64": audio_b64, "save_mp4": True,
+    }, timeout=300.0)
+    r.raise_for_status()
+    meta = r.json()
+    if "video_url" not in meta:
+        return {"offset_ms": None, "ok": False,
+                "reason": f"render returned no video (model={meta.get('model')}, error={meta.get('error')})"}
+    v = await client.get(f"{render_url}{meta['video_url']}", timeout=120.0)
+    v.raise_for_status()
+    clip = RESULTS_DIR / f"lipsync_{test_id}.mp4"
+    clip.write_bytes(v.content)
+    res = await asyncio.to_thread(lipsync.measure_file, str(clip))
+    res["clip"] = str(clip)
+    return res
+
+
 async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verify_url: str) -> dict:
     audio = load_fixture(test["fixture"])
     photo_b64 = load_reference_photo()
@@ -120,6 +144,12 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
         render_result = resp.json()
         first_frame_ms = round((time.monotonic() - t0) * 1000, 1)
 
+        lipsync_res = None
+        if test.get("measure_lipsync"):
+            lipsync_res = await measure_clip_lipsync(client, render_url, test["id"], photo_b64, audio_b64)
+            print(f"    lipsync: offset={lipsync_res.get('offset_ms')} ms r={lipsync_res.get('peak_r')} "
+                  f"{lipsync_res.get('reason') or ''}")
+
         fps = render_result.get("fps", 0)
         painted = render_result.get("painted", {})
         painted_area = painted.get("changed_pixel_area", 0)
@@ -138,6 +168,7 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
             "first_frame_latency_ms": latency_ms,
             "painted_pixel_area": painted_area,
             "frame_diff_mean": painted.get("frame_diff_mean", 0.0),
+            "lipsync_offset_ms": lipsync_res["offset_ms"] if lipsync_res else None,
         }
         try:
             verify_resp = await client.post(f"{verify_url}/scorecard", json={
@@ -151,7 +182,7 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
 
         if not scorecard:
             # Deterministic fallback: compute the same fields the verify node would return.
-            # lipsync_offset_ms and identity_drift are not yet measured -> stay None (red).
+            # identity_drift is not yet measured -> stays None (red); lipsync only when a clip was measured.
             model = render_result.get("model", "")
             is_real_render = model.startswith("flashhead") or model.startswith("leaptalk") or model.startswith("avatarforcing")
             # motion_real: GPU-rendered frames are real by definition (not CSS).
@@ -163,8 +194,8 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
                 # real model AND pixels actually changed between frames (silent idle may be small)
                 "motion_real": is_real_render and painted.get("frame_diff_mean", 0.0) > 0,
                 "painted": painted,
-                "lipsync_ok": False,   # not measured yet
-                "lipsync_offset_ms": None,
+                "lipsync_ok": lipsync.lipsync_ok(metrics["lipsync_offset_ms"]),
+                "lipsync_offset_ms": metrics["lipsync_offset_ms"],  # None unless measured on a real clip
                 "fps_ok": fps >= 24,
                 "fps": fps,
                 "first_frame_ok": latency_ms <= 500,
@@ -173,6 +204,9 @@ async def run_test(client: httpx.AsyncClient, test: dict, render_url: str, verif
                 "identity_drift": None,
                 "source": "deterministic_fallback",
             }
+
+        if lipsync_res is not None:
+            scorecard["lipsync_detail"] = lipsync_res
 
     except Exception as exc:
         scorecard = {"error": repr(exc)}  # repr: httpx timeouts have an empty str()

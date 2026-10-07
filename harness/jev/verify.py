@@ -11,6 +11,8 @@ import os
 
 import httpx
 
+from harness.nodes.verify.lipsync import lipsync_ok
+
 log = logging.getLogger("jev.verify")
 
 _URL = os.environ.get("TYPESAFE_API_URL", "https://api.typesafe.ai/v1/systemone")
@@ -129,7 +131,7 @@ def scorecard(verify_result: dict, metrics: dict) -> dict:
         "stage": verify_result.get("telemetry_stage", "L0"),
         "stage_consistent": verify_result.get("consistent", False),
         "motion_real": verify_result.get("is_motion_visible", False),
-        "lipsync_ok": lipsync is not None and 40 <= lipsync <= 133,
+        "lipsync_ok": lipsync_ok(lipsync),
         "lipsync_offset_ms": lipsync,
         "fps_ok": fps >= 24,
         "fps": fps,
@@ -141,7 +143,7 @@ def scorecard(verify_result: dict, metrics: dict) -> dict:
         "all_green": all([
             verify_result.get("consistent", False),
             verify_result.get("is_motion_visible", False),
-            lipsync is not None and 40 <= lipsync <= 133,
+            lipsync_ok(lipsync),
             fps >= 24,
             first_frame <= 500,
             drift is not None and drift <= 0.15,

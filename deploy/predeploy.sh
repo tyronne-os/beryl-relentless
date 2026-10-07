@@ -10,7 +10,7 @@ chk()  { if eval "$2" >/dev/null 2>&1; then ok "$1"; else bad "$1" "$3"; fi; }
 
 echo "== SYNTAX =="
 for f in deploy/*.sh; do chk "bash -n $f" "bash -n $f" "fix the shell syntax error"; done
-for f in deploy/*.py bakeoff/*.py harness/nodes/*/adapter.py harness/jev/*.py; do
+for f in deploy/*.py bakeoff/*.py harness/nodes/*/adapter.py harness/nodes/verify/lipsync.py harness/jev/*.py; do
     [[ -f "$f" ]] && chk "python parse $f" "python3 -c 'import ast,sys;ast.parse(open(sys.argv[1]).read())' $f" "fix the Python syntax error"
 done
 if command -v shellcheck >/dev/null; then
@@ -33,11 +33,15 @@ chk "L9 render service announces passthrough fallback" "grep -q 'passthrough' de
 chk "L10 scorecard has no hard-coded metrics" "! grep -E '\"lipsync_offset_ms\": *[0-9]|identity_drift\": *0\.[0-9]' bakeoff/scorecard_runner.py" "unmeasured must stay None"
 chk "L17 scorecard warms up before timed tests" "grep -q 'cold_start_ms' bakeoff/scorecard_runner.py" "first /render after restart is a ~60 s cold start; it must not be test #1"
 chk "L17 scorecard errors use repr (timeouts have empty str)" "grep -q 'repr(exc)' bakeoff/scorecard_runner.py" "use repr(exc) so ReadTimeout is visible"
+chk "L18 lip-sync is measured on the rendered mp4, never from timestamps" "grep -q 'lipsync.measure_file' bakeoff/scorecard_runner.py && ! grep -q 'def measure_lipsync_offset' harness/nodes/verify/adapter.py" "lip-sync must come from clip pixels vs audio"
+chk "L18 one lip-sync acceptance rule (no inline 40/133 literals)" "! grep -E '40 <= .*<= 133' harness/jev/verify.py" "use lipsync.lipsync_ok"
 chk "L17 fixture script makes silence_5s.wav" "grep -q 'silence_5s.wav' bakeoff/make_fixtures.sh" "no_css_only_motion uses it"
 
 echo "== LOCAL PYTHON (the interpreter gpu_on.sh will use) =="
 PY=python3; [[ -x .venv/bin/python ]] && PY=.venv/bin/python
 chk "bakeoff deps importable with $PY (httpx, PIL)" "$PY -c 'import httpx, PIL'" "run: sudo apt install -y python3-venv && python3 -m venv .venv && .venv/bin/pip install httpx pillow"
+
+chk "L18 lip-sync deps with $PY (numpy + ffmpeg or imageio-ffmpeg)" "$PY -c 'import numpy' && (command -v ffmpeg || $PY -c 'import imageio_ffmpeg')" "run: .venv/bin/pip install numpy imageio-ffmpeg   (no sudo needed)"
 
 echo "== SECRETS =="
 PAT='(hf_[A-Za-z0-9]{30,}|nvapi-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16}|"private_key":)'

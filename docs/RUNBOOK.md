@@ -178,7 +178,7 @@ Output: `bakeoff/results/<timestamp>.json` (gitignored). Console shows per test 
 | `no_css_only_motion` | yes | Real: painted-pixel diff computed on server from rendered frames (`render_service.py _painted_stats`) |
 | `first_frame_latency` (< 500 ms) | yes | Real: wall-clock round trip of the `/render` call |
 | `fps_realtime` (>= 24) | yes | Real, from the render service's reported fps |
-| `lipsync_range` (40-133 ms) | yes | NOT yet measured. Runner passes no lip-sync offset, so it shows red by design |
+| `lipsync_range` (|offset| ≤ 133 ms) | yes | Measured on a full-length rendered mp4 (saved as `bakeoff/results/lipsync_lipsync_range.mp4`): mouth-region motion vs speech-envelope rate, cross-correlated. Red with a reason if correlation is weak, ffmpeg/numpy are missing, or there is no speech. Manual check: `python3 -m harness.nodes.verify.lipsync CLIP.mp4` |
 | `identity_stable` (drift <= 0.15) | no | NOT yet measured. Runner passes no identity_drift; red/uninformative by design |
 | `stage_consistent` | no | Compares stated stage "L2" to telemetry the runner itself supplies; weak signal |
 
