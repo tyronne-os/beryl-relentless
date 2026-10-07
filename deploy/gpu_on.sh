@@ -120,7 +120,6 @@ deploy_code() {
         export HF_TOKEN='${HF_TOKEN:-}'
         sudo mkdir -p $SERVICE_DIR $WEIGHTS_DIR
         sudo mv /tmp/render_service.py $SERVICE_DIR/
-        sudo mv /tmp/setup_gpu_node.sh /tmp/
         sudo bash /tmp/setup_gpu_node.sh
     "
     log "Code deployed"
