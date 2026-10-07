@@ -39,7 +39,7 @@ else
     [[ "$CODE" == "200" ]] && pass "HF_TOKEN accepted by Hugging Face" || fail "HF_TOKEN rejected (HTTP $CODE)" "create a new read token"
 fi
 
-if ls bakeoff/fixtures/reference.jpg bakeoff/fixtures/reference.png >/dev/null 2>&1; then
+if [[ -f bakeoff/fixtures/reference.jpg || -f bakeoff/fixtures/reference.png ]]; then
     pass "reference face photo present"
 else
     fail "no reference photo at bakeoff/fixtures/reference.jpg" "run ./deploy/prep_fixture.sh then ./deploy/prep_fixture.sh <number>"
