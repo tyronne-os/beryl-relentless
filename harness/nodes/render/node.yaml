@@ -1,0 +1,49 @@
+id: render
+slot: video_render
+model: webgpu-warp-client
+device: client
+stage: L1
+
+input_schema: motion_latents
+output_schema: rendered_frames_512x512
+
+latency_p50_ms: 33
+latency_p95_ms: 80
+latency_budget_ms: 100
+
+health_probe: client_heartbeat
+key_env: null
+
+fallbacks:
+  - model: css_label_animator
+    device: client
+    key_env: null
+    note: L0 — CSS animation from JEV performance labels (current SIM state)
+max_failures: 3
+repair_policy: degrade_stage
+
+bakeoff_slots:
+  - model: flashhead-1.3b
+    device: gpu
+    key_env: null
+    note: SoulX-FlashHead 1.3B distilled student — L2, on berylize-node
+    stage: L2
+  - model: leaptalk-1step
+    device: gpu
+    key_env: null
+    note: LeapTalk 2608.00079 — 1-step Brownian-bridge distillation, L2
+    stage: L2
+  - model: avatarforcing-1.3b
+    device: gpu
+    key_env: null
+    note: AvatarForcing 2603.14331 — 34ms/frame, dual-anchor, L2
+    stage: L2
+
+notes: >
+  L1: client WebGPU warp renderer consuming motion latents over WebSocket.
+  Latents are kb/s not Mb/s — this is the GPU elimination strategy.
+  L2 GPU bake-off: FlashHead vs LeapTalk vs AvatarForcing on berylize-node L4.
+  LivePortrait is the warp renderer backbone — FLAG: InsightFace dependency,
+  check license before adopting (community flags as non-commercial).
+  Fallback to CSS animator keeps L0 alive if renderer fails.
+  VERIFY node reads painted pixels not CSS values to confirm real motion.

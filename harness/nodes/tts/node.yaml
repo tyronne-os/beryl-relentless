@@ -1,0 +1,41 @@
+id: tts
+slot: text_to_speech
+model: kokoro-82m-int8
+device: cpu
+stage: L1
+
+input_schema: token_stream
+output_schema: pcm_audio_22khz
+
+latency_p50_ms: 97
+latency_p95_ms: 250
+latency_budget_ms: 300
+
+health_probe: http_get
+health_url: http://localhost:8012/health
+key_env: null
+
+fallbacks:
+  - model: speaches-cpu
+    device: cpu
+    key_env: null
+    note: speaches on port 8013 — already in main.py
+max_failures: 3
+repair_policy: swap_fallback
+
+bakeoff_slots:
+  - model: qwen3-tts-0.6b
+    device: cpu
+    key_env: null
+    note: Qwen3-TTS 0.6B — 97ms first audio claim, verify
+  - model: tontaube-v1
+    device: cpu
+    key_env: null
+    note: TontaubeV1 2609.08703 — 2.9B, ~200ms, custom license CHECK FIRST
+
+notes: >
+  Kokoro 82M INT8 on CPU — primary. Already proxied at /api/services/kokoro/tts.
+  BUILD STEP 3 change: call TTS server-side before sending WS "done" signal
+  (currently client calls it separately after done — fix the gap).
+  Speaches on port 8013 is the hot fallback (already wired in main.py).
+  TontaubeV1 license must be checked before enabling as bake-off slot.

@@ -1,0 +1,41 @@
+id: listen
+slot: listener_state
+model: duplug-0.6b-int8
+device: cpu
+stage: L1
+
+input_schema: pcm_chunk_16khz_mono
+output_schema: listener_state
+
+latency_p50_ms: 40
+latency_p95_ms: 120
+latency_budget_ms: 150
+
+health_probe: http_get
+health_url: http://localhost:8021/health
+key_env: null
+
+fallbacks:
+  - model: energy_vad_heuristic
+    device: cpu
+    note: pure Python energy+pitch heuristic, zero deps, deterministic
+max_failures: 3
+repair_policy: swap_fallback
+
+bakeoff_slots:
+  - model: unils-listen
+    device: cpu
+    key_env: null
+    note: UniLS 2512.09327 — unified speak+listen face motion, HF xg-chu/UniLS
+  - model: realm-listen
+    device: cpu
+    key_env: null
+    note: REALM 2609.33095 — reactive listener facial motion
+
+notes: >
+  Runs PARALLEL to ASR — does not block the main chain.
+  Duplug classifies listener state (backchanneling, turn-taking, attention).
+  Output feeds MOTION node for listener animation (nodding, gaze shifts).
+  Fallback is a pure-Python energy+pitch heuristic — zero external deps.
+  VideoFDB finding: cascaded systems preclude full-duplex nonverbal cues;
+  this node is the fix.

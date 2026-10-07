@@ -1,0 +1,31 @@
+id: llm
+slot: language_model
+model: nemotron-mini-4b-instruct-nim
+device: api
+stage: L1
+
+input_schema: chat_turn
+output_schema: token_stream
+
+latency_p50_ms: 350
+latency_p95_ms: 800
+latency_budget_ms: 1000
+
+health_probe: http_post_probe
+health_url: https://integrate.api.nvidia.com/v1/chat/completions
+health_body: '{"model":"nvidia/nemotron-mini-4b-instruct","messages":[{"role":"user","content":"hi"}],"max_tokens":1}'
+key_env: NGC_ENTERPRISE_KEY
+
+fallbacks:
+  - model: qwen-local-port8010
+    device: cpu
+    key_env: null
+    note: local Qwen via SSH tunnel from gpu.py (port 8010)
+max_failures: 3
+repair_policy: swap_fallback
+
+notes: >
+  Primary: Nemotron Mini 4B via NIM REST API (integrate.api.nvidia.com).
+  Fallback: local Qwen on port 8010 (SSH tunnel to berylize-node via gpu.py).
+  Style hint from JEV.PERSONA gates every call — persona must approve reply.
+  Existing chat.py handles streaming + tool loop; extend, do not rewrite.

@@ -1,0 +1,58 @@
+id: verify
+slot: quality_verify
+model: deterministic_metrics
+device: cpu
+stage: L1
+
+input_schema: rendered_frames_512x512
+output_schema: scorecard
+
+latency_p50_ms: 20
+latency_p95_ms: 60
+latency_budget_ms: 100
+
+health_probe: always_up
+key_env: null
+
+fallbacks: []
+max_failures: 0
+repair_policy: none
+
+metrics:
+  - name: lipsync_offset_ms
+    method: syncnet_style
+    target_range_ms: [40, 133]
+    note: SyncNet/Sync-C metric — Perceptually Accurate 3D Talking Head 2503.20308
+  - name: fps
+    method: painted_pixel_delta
+    target_min: 24
+    note: reads rendered pixel changes — not CSS transform values
+  - name: first_frame_latency_ms
+    method: wall_clock
+    target_max_ms: 500
+  - name: motion_visible
+    method: painted_pixel_area
+    target_min_pixels: 100
+    note: JEV.VERIFY cross-checks this — flags CSS-only SIM if pixels unchanged
+  - name: identity_drift
+    method: face_embedding_cosine
+    target_max: 0.15
+    note: compare rendered face embedding vs reference photo
+
+jev_verify_fields:
+  - stated_stage
+  - telemetry_stage
+  - consistent
+  - is_motion_visible
+  - occluding_layer
+  - duplug_state
+  - audio_energy_pattern
+  - agrees
+
+notes: >
+  Deterministic metrics are primary — do not rely on MLLM judge alone
+  (Artifact-Bench 2605.18984 finding: MLLMs detect artifacts poorly).
+  JEV.VERIFY is a typed cross-check layer on top, not a replacement.
+  MLLM rubric (VideoFDB/FlowPortrait style) is the third layer only.
+  All metrics published to sensory gland (CRANE Builder right panel).
+  JEV stays OUT of repair decisions — repairs must not depend on it.

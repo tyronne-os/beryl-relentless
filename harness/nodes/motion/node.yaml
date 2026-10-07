@@ -1,0 +1,49 @@
+id: motion
+slot: motion_latents
+model: joyvasa-cpu
+device: cpu
+stage: L1
+
+input_schema: pcm_audio_22khz
+output_schema: motion_latents
+
+latency_p50_ms: 80
+latency_p95_ms: 200
+latency_budget_ms: 250
+
+health_probe: http_get
+health_url: http://localhost:8022/health
+key_env: null
+
+fallbacks:
+  - model: float-cpu
+    device: cpu
+    key_env: null
+    note: FLOAT 2412.01064 — flow matching in motion latent space
+  - model: css_label_passthrough
+    device: cpu
+    key_env: null
+    note: L0 fallback — pass JEV performance labels to client CSS animator
+max_failures: 3
+repair_policy: swap_fallback
+
+bakeoff_slots:
+  - model: joyvasa-gpu
+    device: gpu
+    key_env: null
+    note: JoyVASA on berylize-node L4 — faster inference
+  - model: float-gpu
+    device: gpu
+    key_env: null
+    note: FLOAT on berylize-node L4
+
+notes: >
+  THIS IS THE KEY NODE — replaces SIM blendshapes with real motion latents.
+  JoyVASA 2411.09209: open VASA-style, decoupled facial representation,
+  audio -> motion latents (facial dynamics + head pose), HF jdh-algo/JoyVASA.
+  FLOAT 2412.01064: flow matching alternative, emotion-enhanced, HF.
+  Output: motion latents streamed at kb/s to client WebGPU renderer.
+  JEV.DIRECTOR injects {gaze, blink_rate, nod, micro_expression, intensity}
+  as conditioning into this node every turn.
+  LICENSE: verify JoyVASA and FLOAT before adopting.
+  CPU FPS: measure on berylize-node CPU — do not assume.

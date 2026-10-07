@@ -1,0 +1,24 @@
+id: mic
+slot: input
+model: browser-webrtc-vad
+device: client
+stage: L0
+
+input_schema: audio_stream
+output_schema: pcm_chunk_16khz_mono
+
+latency_p50_ms: 0
+latency_p95_ms: 20
+latency_budget_ms: 20
+
+health_probe: client_heartbeat
+key_env: null
+
+fallbacks: []
+max_failures: 0
+repair_policy: none
+
+notes: >
+  Client-side only. WebRTC getUserMedia + VAD (voice activity detection).
+  Sends 16kHz mono PCM chunks over WebSocket to ASR node.
+  Always live on page load — no server dependency.

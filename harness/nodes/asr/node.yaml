@@ -1,0 +1,35 @@
+id: asr
+slot: speech_to_text
+model: faster-whisper-large-v3-int8
+device: cpu
+stage: L1
+
+input_schema: pcm_chunk_16khz_mono
+output_schema: transcript_segment
+
+latency_p50_ms: 400
+latency_p95_ms: 900
+latency_budget_ms: 1000
+
+health_probe: http_get
+health_url: http://localhost:8020/health
+key_env: null
+
+fallbacks:
+  - model: faster-whisper-base-int8
+    device: cpu
+    note: smaller model, faster, lower accuracy
+max_failures: 3
+repair_policy: swap_fallback
+
+bakeoff_slots:
+  - model: parakeet-ctc-1.1b-nim
+    device: api
+    key_env: NGC_API_KEY
+    note: NVIDIA NIM Parakeet — grpc.nvcf.nvidia.com
+
+notes: >
+  Primary: faster-whisper large-v3 INT8 quantised, runs on CPU.
+  Reference impl: github.com/SYSTRAN/faster-whisper
+  Bake-off slot: Parakeet CTC 1.1B via NIM gRPC (requires NGC_API_KEY).
+  On 3rd distinct failure swap to faster-whisper-base-int8 (known-good).

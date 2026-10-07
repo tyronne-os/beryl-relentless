@@ -1,0 +1,53 @@
+version: "1"
+
+pipelines:
+
+  beryl-l1-cpu:
+    name: "Beryl L1 — CPU+API baseline"
+    description: "Full pipeline on CPU and NIM API. No GPU required. Client WebGPU renderer."
+    stage: L1
+    chain:
+      - mic
+      - asr
+      - listen
+      - llm
+      - tts
+      - motion
+      - render
+      - verify
+    health_bus: ws_broadcast
+    controller: harness/controller/session.py
+
+  beryl-l2-gpu:
+    name: "Beryl L2 — GPU Cinematic"
+    description: "L1 chain plus server-side diffusion student render on berylize-node L4."
+    stage: L2
+    chain:
+      - mic
+      - asr
+      - listen
+      - llm
+      - tts
+      - motion
+      - render_gpu
+      - verify
+    health_bus: ws_broadcast
+    controller: harness/controller/session.py
+    requires:
+      - berylize_node_running: true
+      - render_node_warm: true
+
+  nvidia-prebuilt:
+    name: "NVIDIA Pre-built (Tokkio NIM)"
+    description: "Connectivity probe only. Does not execute inference. Reference pipeline."
+    stage: reference
+    chain:
+      - mic
+      - asr_nim
+      - llm_nim
+      - tts_nim
+      - a2f_nim
+      - anm_client
+    health_bus: sse_stream
+    probe_only: true
+    note: "Ported from existing deploy.py. Omniverse stage permanently skipped."
